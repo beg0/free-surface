@@ -118,7 +118,7 @@ fn split_into_blocks(input: &str) -> Vec<BlockParseInfo> {
             if !current.trim().is_empty() {
                 blocks.push(BlockParseInfo {
                     val: current,
-                    start_line: start_line,
+                    start_line,
                 });
                 current = String::new();
                 start_line = line_idx;
@@ -138,7 +138,7 @@ fn split_into_blocks(input: &str) -> Vec<BlockParseInfo> {
     if !current.trim().is_empty() {
         blocks.push(BlockParseInfo {
             val: current,
-            start_line: start_line,
+            start_line,
         });
     }
 
@@ -162,7 +162,7 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
     };
 
     let get_val = |key: &'static str| -> Option<String> {
-        get_raw_val(key).and_then(|val| Some(unquote_single(val.as_str())))
+        get_raw_val(key).map(|val| unquote_single(val.as_str()))
     };
 
     let require = |key: &'static str, errors: &mut Vec<DicoParseError>| -> String {
@@ -186,11 +186,9 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
         let help = get_val(names.1).unwrap_or_default();
         let default_val = get_val(names.2);
         let choices = get_raw_val(names.3)
-            .map(|s| parse_semicolon_list(&s, true))
+            .map(|s| parse_semicolon_list(s, true))
             .unwrap_or_default();
-        let classification = get_raw_val(names.4)
-            .map(|s| parse_rubrique(s))
-            .unwrap_or_default();
+        let classification = get_raw_val(names.4).map(parse_rubrique).unwrap_or_default();
 
         text_desc.insert(
             String::from(locale),
@@ -313,13 +311,13 @@ fn parse_fields(
     ];
 
     for (line_idx, line) in block.lines().enumerate() {
-        let trimmed = if in_quote == true {
+        let trimmed = if in_quote {
             line.trim_end()
         } else {
             line.trim()
         };
 
-        if in_quote == false {
+        if !in_quote {
             if trimmed.is_empty() {
                 continue;
             }
