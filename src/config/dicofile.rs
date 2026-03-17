@@ -5,6 +5,7 @@
 //! for steering files (a.k.a "cas" file) for a given program (Telemac2D,
 //!  Telemac3D, Artemis, Tomawac...)
 
+use super::parse_helpers::unquote_single;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -472,16 +473,6 @@ fn parse_rubrique(raw: &String) -> [String; 3] {
         items.get(1).cloned().unwrap_or_default(),
         items.get(2).cloned().unwrap_or_default(),
     ]
-}
-
-/// Remove surrounding single quotes, and unescape '' -> '
-fn unquote_single(s: &str) -> String {
-    let inner = if s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2 {
-        &s[1..s.len() - 1]
-    } else {
-        s
-    };
-    inner.replace("''", "'")
 }
 
 // cSpell:ignore apparence choix liste fichier entier logique defaut rubrique niveau dynlist
