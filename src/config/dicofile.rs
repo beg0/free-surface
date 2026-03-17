@@ -4,7 +4,7 @@
 //! all keywords allowed
 //! for steering files (a.k.a "cas" file) for a given program (Telemac2D,
 //! Telemac3D, Artemis, Tomawac...)
-use super::configvalue::DicoType;
+use super::configvalue::{parse_single_value, parse_value, ConfigValue, DicoType};
 use super::parse_helpers::unquote_single;
 use std::collections::HashMap;
 
@@ -18,18 +18,27 @@ pub enum GuiControl {
 }
 
 #[derive(Debug, Clone)]
+pub struct ChoiceOptionHelp {
+    #[allow(dead_code)]
+    option: ConfigValue,
+
+    #[allow(dead_code)]
+    help: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct KeywordTextDescription {
-    pub name: String,                // Keyword name
-    pub choices: Vec<String>,        // Possible values (if applicable)
-    pub default_val: Option<String>, // Default value
-    pub classification: [String; 3], // Classification, 3 levels
-    pub help: String,
+    pub name: String,                        // Keyword name
+    pub choices_help: Vec<ChoiceOptionHelp>, // Help text for each possible values
+    pub default_val: Option<ConfigValue>,    // Default value
+    pub classification: [String; 3],         // Classification, 3 levels
+    pub help: String,                        // Keyword description
 }
 
 /// A single keyword entry from the dico file
 #[derive(Debug, Clone)]
 pub struct DicoKeyword {
-    pub text_desc: HashMap<String, KeywordTextDescription>,
+    pub text_desc: HashMap<String, KeywordTextDescription>, // localized description
     pub type_: DicoType,
     pub index: u32,
     pub nargs: u32, // Number of time this keyword may occur. 0 means infinite
@@ -54,10 +63,42 @@ pub enum DicoParseError {
         reason: String,
         line: usize,
     },
-    #[error("Malformed line {line}: '{content}'")]
-    MalformedLine { line: usize, content: String },
+    #[error("Invalid default value '{value}' in field {field} at {line}: {reason}")]
+    InvalidDefaultValue {
+        field: String,
+        value: String,
+        reason: String,
+        line: usize,
+    },
+    #[error("Invalid value for choice '{option}' in field {field} at {line}: {reason}")]
+    InvalidChoice {
+        field: String,
+        option: String,
+        reason: String,
+        line: usize,
+    },
+    // #[error("Inconsistent options at {line} between choices for {lang1} and {lang2}. Got {choices1} and {choices2}")]
+    // InconsistentChoiceOption {
+    //     lang1: String,
+    //     lang2: String,
+    //     choices1: Vec<ConfigValue>,
+    //     choices2: Vec<ConfigValue>,
+    //     line: usize,
+    // },
+    #[error("Inconsistent options at {line} between choices for different languages.")]
+    InconsistentChoiceOption { line: usize },
+    // #[error("Malformed line {line}: '{content}'")]
+    // MalformedLine { line: usize, content: String },
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ChoiceValidationError {
+    #[error("Value {value:?} is not a valid choice")]
+    NotFound {
+        value: ConfigValue,
+        choices: Vec<ChoiceOptionHelp>,
+    },
+}
 struct ValueParseInfo {
     val: String,
     line: usize,
@@ -144,6 +185,7 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
     let fields = parse_fields(block, &mut errors, start_line);
 
     let mut text_desc: HashMap<String, KeywordTextDescription> = HashMap::new();
+    let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
 
     // Helper closures
     let get = |key: &'static str| -> Option<&ValueParseInfo> { fields.get(key) };
@@ -171,52 +213,30 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
         }
     };
 
-    let french_names = ("NOM", "AIDE", "DEFAUT", "CHOIX", "RUBRIQUE");
-    let english_names = ("NOM1", "AIDE1", "DEFAUT1", "CHOIX1", "RUBRIQUE1");
+    let type_ = get("TYPE")
+        .and_then(|desc| match unquote_single(desc.val.trim()).as_str() {
+            "STRING" | "CARACTERE" => Some(DicoType::String),
+            "INTEGER" | "ENTIER" => Some(DicoType::Integer),
+            "REAL" | "REEL" => Some(DicoType::Real),
+            "LOGICAL" | "LOGIQUE" => Some(DicoType::Logical),
+            other => {
+                errors.push(DicoParseError::InvalidValue {
+                    field: "TYPE".into(),
+                    reason: format!("unknown type '{}'", other),
+                    line: desc.line + 1,
+                });
+                None
+            }
+        })
+        .unwrap_or(DicoType::String);
 
-    for (locale, names) in [("fr", french_names), ("en", english_names)] {
-        let name = require(names.0, &mut errors);
-        let help = get_val(names.1).unwrap_or_default();
-        let default_val = get_val(names.2);
-        let choices = get_raw_val(names.3)
-            .map(|s| parse_semicolon_list(s, true))
-            .unwrap_or_default();
-        let classification = get_raw_val(names.4).map(parse_rubrique).unwrap_or_default();
-
-        text_desc.insert(
-            String::from(locale),
-            KeywordTextDescription {
-                name,
-                help,
-                default_val,
-                choices,
-                classification,
-            },
-        );
-    }
     let mnemo = require("MNEMO", &mut errors);
-
-    let type_ = get("TYPE").and_then(|desc| match unquote_single(desc.val.trim()).as_str() {
-        "STRING" | "CARACTERE" => Some(DicoType::String),
-        "INTEGER" | "ENTIER" => Some(DicoType::Integer),
-        "REAL" | "REEL" => Some(DicoType::Real),
-        "LOGICAL" | "LOGIQUE" => Some(DicoType::Logical),
-        other => {
-            errors.push(DicoParseError::InvalidValue {
-                field: "TYPE".into(),
-                reason: format!("unknown type '{}'", other),
-                line: desc.line + 1,
-            });
-            None
-        }
-    });
-
-    let index = parse_u32_field("INDEX", get("INDEX"), &mut errors, start_line);
 
     let default_taille = ValueParseInfo {
         val: String::from("1"),
         line: 0,
     };
+
     let taille = parse_u32_field(
         "TAILLE",
         get("TAILLE").or(Some(&default_taille)),
@@ -224,12 +244,80 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
         start_line,
     );
 
-    let submit = get_val("SUBMIT")
-        .map(|s| parse_semicolon_list(&s, false))
-        .unwrap_or_default();
-    let niveau = parse_u32_field("NIVEAU", get("NIVEAU"), &mut errors, start_line);
+    let french_names = ("NOM", "AIDE", "DEFAUT", "CHOIX", "RUBRIQUE");
+    let english_names = ("NOM1", "AIDE1", "DEFAUT1", "CHOIX1", "RUBRIQUE1");
 
-    let controle = get("CONTROLE").and_then(|desc| parse_controle(desc, &mut errors));
+    for (locale, names) in [("fr", french_names), ("en", english_names)] {
+        let name = require(names.0, &mut errors);
+        let help = get_val(names.1).unwrap_or_default();
+        let default_val_str = get_val(names.2);
+
+        let default_val = default_val_str.and_then(|value| {
+            match parse_value(value.as_str(), &type_, taille.try_into().unwrap()) {
+                Ok(option) => Some(option),
+                Err(reason) => {
+                    errors.push(DicoParseError::InvalidDefaultValue {
+                        field: String::from(names.2),
+                        value,
+                        reason,
+                        line: start_line + 1,
+                    });
+                    None
+                }
+            }
+        });
+
+        let choices_text = get_raw_val(names.3)
+            .map(|s| parse_semicolon_list(s, true))
+            .unwrap_or_default();
+
+        let classification = get_raw_val(names.4).map(parse_rubrique).unwrap_or_default();
+
+        let mut choices_help: Vec<ChoiceOptionHelp> = Vec::with_capacity(choices_text.len());
+        let mut choices_values: Vec<ConfigValue> = Vec::with_capacity(choices_text.len());
+
+        for entry in choices_text {
+            let option_text: &str;
+            let help_text: String;
+            if let Some(eq_pos) = find_key_assignment(entry.as_str(), false) {
+                option_text = entry.as_str()[..eq_pos].trim();
+                help_text = String::from(entry.as_str()[eq_pos..].trim());
+            } else {
+                option_text = entry.as_str();
+                help_text = String::new();
+            };
+
+            match parse_single_value(option_text, &type_) {
+                Ok(option) => {
+                    choices_values.push(option.clone());
+                    choices_help.push(ChoiceOptionHelp {
+                        option,
+                        help: help_text,
+                    });
+                }
+                Err(reason) => {
+                    errors.push(DicoParseError::InvalidChoice {
+                        field: String::from(names.3),
+                        option: String::from(option_text),
+                        reason,
+                        line: start_line + 1,
+                    });
+                }
+            };
+        }
+
+        text_desc.insert(
+            String::from(locale),
+            KeywordTextDescription {
+                name,
+                help,
+                default_val,
+                choices_help,
+                classification,
+            },
+        );
+        choices_per_local.insert(String::from(locale), choices_values);
+    }
 
     let apparence =
         get("APPARENCE").and_then(|desc| match unquote_single(desc.val.trim()).as_str() {
@@ -248,13 +336,36 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
             }
         });
 
+    let index = parse_u32_field("INDEX", get("INDEX"), &mut errors, start_line);
+    let submit = get_val("SUBMIT")
+        .map(|s| parse_semicolon_list(&s, false))
+        .unwrap_or_default();
+    let niveau = parse_u32_field("NIVEAU", get("NIVEAU"), &mut errors, start_line);
+
+    let controle = get("CONTROLE").and_then(|desc| parse_controle(desc, &mut errors));
+
+    // FIXME: we check here that both english & french "CHOIX" expose
+    // the same options. We need to make this code more generic to handle other langages
+    let choices_cnt_fr = text_desc
+        .get("fr")
+        .map_or(0, |desc| desc.choices_help.len());
+    let choices_cnt_en = text_desc
+        .get("en")
+        .map_or(0, |desc| desc.choices_help.len());
+
+    if choices_cnt_fr != choices_cnt_en {
+        errors.push(DicoParseError::InconsistentChoiceOption {
+            line: start_line + 1,
+        });
+    }
+
     if !errors.is_empty() {
         return Err(errors);
     }
 
     Ok(DicoKeyword {
         text_desc,
-        type_: type_.unwrap_or(DicoType::String),
+        type_,
         index,
         nargs: taille,
         submit,
@@ -317,7 +428,7 @@ fn parse_fields(
 
             // Check if this line starts a new key: "KEYWORD = ..."
             // A key is all-uppercase (and underscores/digits), followed by " = "
-            if let Some(eq_pos) = find_key_assignment(trimmed) {
+            if let Some(eq_pos) = find_key_assignment(trimmed, true) {
                 let candidate_key = trimmed[..eq_pos].trim().to_uppercase();
 
                 if known_keys.contains(&candidate_key.as_str()) {
@@ -375,16 +486,17 @@ fn parse_fields(
 
 /// Returns the position of '=' if the line looks like "KEY = value"
 /// where KEY is uppercase letters, digits, underscores, and spaces.
-fn find_key_assignment(line: &str) -> Option<usize> {
+fn find_key_assignment(line: &str, check_key: bool) -> Option<usize> {
     let eq_pos = line.find('=')?;
     let key_part = line[..eq_pos].trim();
     // Key must be non-empty and contain only uppercase letters, digits, underscores
     if key_part.is_empty() {
         return None;
     }
-    let valid = key_part
-        .chars()
-        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+    let valid = !check_key
+        || key_part
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
     if valid {
         Some(eq_pos)
     } else {

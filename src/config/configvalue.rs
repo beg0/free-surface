@@ -58,7 +58,7 @@ fn parse_list<'a>(raw_value: &'a str, kind: &DicoType, nargs: usize) -> Vec<&'a 
             && ret[ret_last_idx].ends_with(c)
     };
 
-    if (nargs != 1) && (ret.len() > 0) && (surrounded_by('\'') || surrounded_by('"')) {
+    if (nargs != 1) && !ret.is_empty() && (surrounded_by('\'') || surrounded_by('"')) {
         ret[0] = &ret[0][1..];
         let last_elt_len = ret[ret_last_idx].len();
         ret[ret_last_idx] = &ret[ret_last_idx][..(last_elt_len - 1)];
