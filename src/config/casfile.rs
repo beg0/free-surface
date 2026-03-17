@@ -5,16 +5,9 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
-//use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Value {
-    String(String),
-    Path(std::path::PathBuf),
-    Boolean(bool),
-    Integer(i64),
-    Float(f64),
-}
+use super::configvalue::ConfigValue;
+use super::configvalue::DicoType;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -26,23 +19,13 @@ pub enum ParseError {
     SyntaxError { line: usize, reason: String },
 }
 
-/// Describes what type a known key expects
-#[derive(Debug, Clone, Copy)]
-pub enum ValueKind {
-    String,
-    Path,
-    Boolean,
-    Integer,
-    Float,
-}
-
 pub struct Parser {
     /// Map of normalized (lowercase) key -> expected type
-    dico: HashMap<String, ValueKind>,
+    dico: HashMap<String, DicoType>,
 }
 
 impl Parser {
-    pub fn new(dico: impl IntoIterator<Item = (impl Into<String>, ValueKind)>) -> Self {
+    pub fn new(dico: impl IntoIterator<Item = (impl Into<String>, DicoType)>) -> Self {
         Self {
             dico: dico
                 .into_iter()
@@ -51,7 +34,7 @@ impl Parser {
         }
     }
 
-    pub fn parse(&self, input: &str) -> Result<HashMap<String, Value>, Vec<ParseError>> {
+    pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
         let mut result = HashMap::new();
         let mut errors = Vec::new();
 
@@ -77,12 +60,12 @@ impl Parser {
             let raw_key = line[..eq_pos].trim().to_lowercase();
             let raw_value = line[eq_pos + 1..].trim();
 
-            let Some(&kind) = self.dico.get(&raw_key) else {
+            let Some(kind) = self.dico.get(&raw_key) else {
                 errors.push(ParseError::UnknownKey(raw_key));
                 continue;
             };
 
-            match parse_value(raw_value, kind) {
+            match parse_value(raw_value, kind.clone()) {
                 Ok(value) => {
                     result.insert(raw_key, value);
                 }
@@ -118,24 +101,24 @@ fn strip_comment(line: &str) -> &str {
     line
 }
 
-fn parse_value(raw: &str, kind: ValueKind) -> Result<Value, String> {
+fn parse_value(raw: &str, kind: DicoType) -> Result<ConfigValue, String> {
     match kind {
-        ValueKind::Boolean => match raw.to_lowercase().as_str() {
-            "true" | "yes" | "1" | "on" => Ok(Value::Boolean(true)),
-            "false" | "no" | "0" | "off" => Ok(Value::Boolean(false)),
+        DicoType::Logical => match raw.to_lowercase().as_str() {
+            "true" | "yes" | "1" | "on" => Ok(ConfigValue::Boolean(true)),
+            "false" | "no" | "0" | "off" => Ok(ConfigValue::Boolean(false)),
             _ => Err(format!("'{}' is not a valid boolean", raw)),
         },
-        ValueKind::Integer => i64::from_str(raw)
-            .map(Value::Integer)
+        DicoType::Integer => i64::from_str(raw)
+            .map(ConfigValue::Integer)
             .map_err(|_| format!("'{}' is not a valid integer", raw)),
-        ValueKind::Float => f64::from_str(raw)
-            .map(Value::Float)
+        DicoType::Real => f64::from_str(raw)
+            .map(ConfigValue::Float)
             .map_err(|_| format!("'{}' is not a valid float", raw)),
-        ValueKind::Path => {
-            let path = unquote(raw);
-            Ok(Value::Path(std::path::PathBuf::from(path)))
-        }
-        ValueKind::String => Ok(Value::String(unquote(raw).to_string())),
+        // DicoType::Path => {
+        //     let path = unquote(raw);
+        //     Ok(ConfigValue::Path(std::path::PathBuf::from(path)))
+        // }
+        DicoType::String => Ok(ConfigValue::String(unquote(raw).to_string())),
     }
 }
 
@@ -153,17 +136,16 @@ mod tests {
 
     fn make_parser() -> Parser {
         Parser::new([
-            ("who mom loves", ValueKind::String),
-            ("my age", ValueKind::Integer),
-            ("am i serious", ValueKind::Boolean),
-            ("where do i live", ValueKind::Path),
-            ("my favorite number", ValueKind::Float),
+            ("who mom loves", DicoType::String),
+            ("my age", DicoType::Integer),
+            ("am i serious", DicoType::Logical),
+            ("my favorite number", DicoType::Real),
         ])
     }
 
     // --- Helpers ---
 
-    fn parse_ok(input: &str) -> HashMap<String, Value> {
+    fn parse_ok(input: &str) -> HashMap<String, ConfigValue> {
         make_parser()
             .parse(input)
             .expect("Expected successful parse")
@@ -180,7 +162,7 @@ mod tests {
     #[test]
     fn test_string_unquoted() {
         let config = parse_ok("who mom loves = me");
-        assert_eq!(config["who mom loves"], Value::String("me".into()));
+        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
     }
 
     #[test]
@@ -188,38 +170,38 @@ mod tests {
         let config = parse_ok(r#"who mom loves = "definitely me""#);
         assert_eq!(
             config["who mom loves"],
-            Value::String("definitely me".into())
+            ConfigValue::String("definitely me".into())
         );
     }
 
     #[test]
     fn test_integer() {
         let config = parse_ok("my age = 25");
-        assert_eq!(config["my age"], Value::Integer(25));
+        assert_eq!(config["my age"], ConfigValue::Integer(25));
     }
 
     #[test]
     fn test_integer_negative() {
         let config = parse_ok("my age = -5");
-        assert_eq!(config["my age"], Value::Integer(-5));
+        assert_eq!(config["my age"], ConfigValue::Integer(-5));
     }
 
     #[test]
     fn test_float() {
         let config = parse_ok("my favorite number = 3.14");
-        assert_eq!(config["my favorite number"], Value::Float(3.14));
+        assert_eq!(config["my favorite number"], ConfigValue::Float(3.14));
     }
 
     #[test]
     fn test_float_whole_number() {
         let config = parse_ok("my favorite number = 42");
-        assert_eq!(config["my favorite number"], Value::Float(42.0));
+        assert_eq!(config["my favorite number"], ConfigValue::Float(42.0));
     }
 
     #[test]
     fn test_float_negative() {
         let config = parse_ok("my favorite number = -2.718");
-        assert_eq!(config["my favorite number"], Value::Float(-2.718));
+        assert_eq!(config["my favorite number"], ConfigValue::Float(-2.718));
     }
 
     #[test]
@@ -229,7 +211,7 @@ mod tests {
             let config = parse_ok(&input);
             assert_eq!(
                 config["am i serious"],
-                Value::Boolean(true),
+                ConfigValue::Boolean(true),
                 "Failed for boolean input: {}",
                 val
             );
@@ -243,7 +225,7 @@ mod tests {
             let config = parse_ok(&input);
             assert_eq!(
                 config["am i serious"],
-                Value::Boolean(false),
+                ConfigValue::Boolean(false),
                 "Failed for boolean input: {}",
                 val
             );
@@ -255,31 +237,31 @@ mod tests {
     //     let config = parse_ok("where do i live = /my/house");
     //     assert_eq!(
     //         config["where do i live"],
-    //         Value::Path(std::path::PathBuf::from("/my/house"))
+    //         ConfigValue::Path(std::path::PathBuf::from("/my/house"))
     //     );
     // }
 
-    #[test]
-    fn test_path_quoted() {
-        let config = parse_ok(r#"where do i live = "/my/cozy house""#);
-        assert_eq!(
-            config["where do i live"],
-            Value::Path(std::path::PathBuf::from("/my/cozy house"))
-        );
-    }
+    // #[test]
+    // fn test_path_quoted() {
+    //     let config = parse_ok(r#"where do i live = "/my/cozy house""#);
+    //     assert_eq!(
+    //         config["where do i live"],
+    //         ConfigValue::Path(std::path::PathBuf::from("/my/cozy house"))
+    //     );
+    // }
 
     // --- Case insensitivity ---
 
     #[test]
     fn test_key_case_insensitive_upper() {
         let config = parse_ok("WHO MOM LOVES = me");
-        assert_eq!(config["who mom loves"], Value::String("me".into()));
+        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
     }
 
     #[test]
     fn test_key_mixed_case() {
         let config = parse_ok("Who Mom Loves = me");
-        assert_eq!(config["who mom loves"], Value::String("me".into()));
+        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
     }
 
     // --- Comments ---
@@ -287,37 +269,43 @@ mod tests {
     #[test]
     fn test_hash_comment_line() {
         let config = parse_ok("# this is a comment\nmy age = 30");
-        assert_eq!(config["my age"], Value::Integer(30));
+        assert_eq!(config["my age"], ConfigValue::Integer(30));
     }
 
     #[test]
     fn test_slash_comment_line() {
         let config = parse_ok("/ this is a comment\nmy age = 30");
-        assert_eq!(config["my age"], Value::Integer(30));
+        assert_eq!(config["my age"], ConfigValue::Integer(30));
     }
 
     #[test]
     fn test_inline_hash_comment() {
         let config = parse_ok("my age = 30 # my real age");
-        assert_eq!(config["my age"], Value::Integer(30));
+        assert_eq!(config["my age"], ConfigValue::Integer(30));
     }
 
     #[test]
     fn test_inline_slash_comment() {
         let config = parse_ok("my age = 30 / my real age");
-        assert_eq!(config["my age"], Value::Integer(30));
+        assert_eq!(config["my age"], ConfigValue::Integer(30));
     }
 
     #[test]
     fn test_comment_inside_quoted_string_preserved() {
         let config = parse_ok(r#"who mom loves = "me / always""#);
-        assert_eq!(config["who mom loves"], Value::String("me / always".into()));
+        assert_eq!(
+            config["who mom loves"],
+            ConfigValue::String("me / always".into())
+        );
     }
 
     #[test]
     fn test_hash_inside_quoted_string_preserved() {
         let config = parse_ok(r#"who mom loves = "me # always""#);
-        assert_eq!(config["who mom loves"], Value::String("me # always".into()));
+        assert_eq!(
+            config["who mom loves"],
+            ConfigValue::String("me # always".into())
+        );
     }
 
     // --- Whitespace handling ---
@@ -325,19 +313,19 @@ mod tests {
     #[test]
     fn test_leading_trailing_whitespace_on_key() {
         let config = parse_ok("  who mom loves  = me");
-        assert_eq!(config["who mom loves"], Value::String("me".into()));
+        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
     }
 
     #[test]
     fn test_leading_trailing_whitespace_on_value() {
         let config = parse_ok("my age =   25  ");
-        assert_eq!(config["my age"], Value::Integer(25));
+        assert_eq!(config["my age"], ConfigValue::Integer(25));
     }
 
     #[test]
     fn test_empty_lines_ignored() {
         let config = parse_ok("\n\nmy age = 25\n\n");
-        assert_eq!(config["my age"], Value::Integer(25));
+        assert_eq!(config["my age"], ConfigValue::Integer(25));
     }
 
     // --- Multiple keys ---
@@ -348,24 +336,19 @@ mod tests {
             who mom loves = me
             my age = 25
             am i serious = false
-            where do i live = \"/my/house\"
             my favorite number = 3.14
         "};
         let config = parse_ok(input);
-        assert_eq!(config["who mom loves"], Value::String("me".into()));
-        assert_eq!(config["my age"], Value::Integer(25));
-        assert_eq!(config["am i serious"], Value::Boolean(false));
-        assert_eq!(
-            config["where do i live"],
-            Value::Path(std::path::PathBuf::from("/my/house"))
-        );
-        assert_eq!(config["my favorite number"], Value::Float(3.14));
+        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
+        assert_eq!(config["my age"], ConfigValue::Integer(25));
+        assert_eq!(config["am i serious"], ConfigValue::Boolean(false));
+        assert_eq!(config["my favorite number"], ConfigValue::Float(3.14));
     }
 
     #[test]
     fn test_last_value_wins_on_duplicate_key() {
         let config = parse_ok("my age = 20\nmy age = 99");
-        assert_eq!(config["my age"], Value::Integer(99));
+        assert_eq!(config["my age"], ConfigValue::Integer(99));
     }
 
     // --- Error cases ---

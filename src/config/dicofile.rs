@@ -3,18 +3,10 @@
 //! Parse Telemac dictionary files. Dictionaries contains the list of
 //! all keywords allowed
 //! for steering files (a.k.a "cas" file) for a given program (Telemac2D,
-//!  Telemac3D, Artemis, Tomawac...)
-
+//! Telemac3D, Artemis, Tomawac...)
+use super::configvalue::DicoType;
 use super::parse_helpers::unquote_single;
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum DicoType {
-    String,
-    Integer,
-    Real,
-    Logical,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GuiControl {
