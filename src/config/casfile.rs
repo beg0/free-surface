@@ -49,7 +49,7 @@ impl Parser {
             }
 
             // Split on first '=' or ':'
-            let Some(eq_pos) = line.find(&['=', ':']) else {
+            let Some(eq_pos) = line.find(['=', ':']) else {
                 errors.push(ParseError::SyntaxError {
                     line: line_num,
                     reason: "Missing assignment operator ('=' or ':') ".into(),
@@ -87,14 +87,26 @@ impl Parser {
 }
 
 fn strip_comment(line: &str) -> &str {
-    // Find first '/' or '#' that isn't inside a quoted string
-    let mut in_quotes = false;
-    let chars = line.char_indices().peekable();
+    let mut in_double_quotes = false;
+    let mut in_single_quotes = false;
+    let mut chars = line.char_indices().peekable();
 
-    for (i, c) in chars {
+    while let Some((i, c)) = chars.next() {
         match c {
-            '"' => in_quotes = !in_quotes,
-            '/' | '#' if !in_quotes => return &line[..i],
+            '"' if !in_single_quotes => in_double_quotes = !in_double_quotes,
+            '\'' if !in_double_quotes => {
+                // Handle escaped single quote '' - peek at next char
+                if in_single_quotes {
+                    if chars.peek().map(|(_, c)| *c) == Some('\'') {
+                        chars.next(); // consume the second ', it's an escape
+                    } else {
+                        in_single_quotes = false;
+                    }
+                } else {
+                    in_single_quotes = true;
+                }
+            }
+            '/' | '#' if !in_double_quotes && !in_single_quotes => return &line[..i],
             _ => {}
         }
     }
