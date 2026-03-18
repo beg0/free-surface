@@ -48,11 +48,11 @@ impl Parser {
                 continue;
             }
 
-            // Split on first '='
-            let Some(eq_pos) = line.find('=') else {
+            // Split on first '=' or ':'
+            let Some(eq_pos) = line.find(&['=', ':']) else {
                 errors.push(ParseError::SyntaxError {
                     line: line_num,
-                    reason: "Missing '='".into(),
+                    reason: "Missing assignment operator ('=' or ':') ".into(),
                 });
                 continue;
             };
