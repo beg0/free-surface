@@ -95,6 +95,8 @@ pub enum ChoiceValidationError {
         value: ConfigValue,
         choices: Vec<ChoiceOptionHelp>,
     },
+    #[error("Something wrong with value {value:?}: {reason}")]
+    InternalError { value: ConfigValue, reason: String },
 }
 struct ValueParseInfo {
     val: String,

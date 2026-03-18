@@ -4,34 +4,68 @@
 //!
 
 use std::collections::HashMap;
-use std::str::FromStr;
 
-use super::configvalue::ConfigValue;
-use super::configvalue::DicoType;
+use super::configvalue::{parse_value, ConfigValue};
+use super::dicofile;
+use super::dicofile::DicoKeyword;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    #[error("Unknown key: '{0}'")]
-    UnknownKey(String),
-    #[error("Invalid value for key '{key}': {reason}")]
-    InvalidValue { key: String, reason: String },
+    #[error("Unknown key at line {line}: '{key}'")]
+    UnknownKey { key: String, line: usize },
+    #[error("Invalid value for key '{key}' at line {line}: {reason}")]
+    InvalidValue {
+        key: String,
+        line: usize,
+        reason: String,
+    },
+    #[error("Too much values for key '{key}' at line {line}: got {got_count} but expected {expected_count}")]
+    TooMuchValues {
+        key: String,
+        line: usize,
+        got_count: usize,
+        expected_count: usize,
+    },
     #[error("Syntax error on line {line}: {reason}")]
     SyntaxError { line: usize, reason: String },
+    #[error(
+        "Value out of bound for key {key} at line {line}: value should be between {min} and {max}, got '{value}'"
+    )]
+    OutOfBound {
+        key: String,
+        line: usize,
+        value: String,
+        min: f64,
+        max: f64,
+    },
+    #[error("Invalid value for key {key} at line {line}: {reason}")]
+    BadChoice {
+        key: String,
+        line: usize,
+        value: ConfigValue,
+        #[source]
+        reason: dicofile::ChoiceValidationError,
+    },
 }
 
-pub struct Parser {
-    /// Map of normalized (lowercase) key -> expected type
-    dico: HashMap<String, DicoType>,
+pub struct Parser<'dico> {
+    /// Map of normalized (uppercase) key -> expected type
+    dico: &'dico dicofile::Dico,
+    keywords: HashMap<&'dico String, &'dico dicofile::DicoKeyword>,
 }
 
-impl Parser {
-    pub fn new(dico: impl IntoIterator<Item = (impl Into<String>, DicoType)>) -> Self {
-        Self {
-            dico: dico
-                .into_iter()
-                .map(|(k, v)| (k.into().to_lowercase(), v))
-                .collect(),
+impl<'dico> Parser<'dico> {
+    pub fn new(dico: &'dico dicofile::Dico) -> Self {
+        let mut ret = Self {
+            dico,
+            keywords: HashMap::new(),
+        };
+        for keyword in ret.dico {
+            for desc in keyword.text_desc.values() {
+                ret.keywords.insert(&desc.name, keyword);
+            }
         }
+        ret
     }
 
     pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
@@ -56,26 +90,69 @@ impl Parser {
                 });
                 continue;
             };
-
-            let raw_key = line[..eq_pos].trim().to_lowercase();
+            let raw_key = String::from(line[..eq_pos].trim());
             let raw_value = line[eq_pos + 1..].trim();
 
-            let Some(kind) = self.dico.get(&raw_key) else {
-                errors.push(ParseError::UnknownKey(raw_key));
+            let Some(keyword) = self.keywords.get(&raw_key.to_uppercase()) else {
+                errors.push(ParseError::UnknownKey {
+                    line: line_num,
+                    key: raw_key,
+                });
                 continue;
             };
 
-            match parse_value(raw_value, kind.clone()) {
-                Ok(value) => {
-                    result.insert(raw_key, value);
-                }
-                Err(reason) => {
-                    errors.push(ParseError::InvalidValue {
+            let nargs: usize = keyword.nargs.try_into().unwrap_or(1);
+
+            let parse_result = parse_value(raw_value, &keyword.type_, nargs);
+
+            let Ok(value) = parse_result else {
+                errors.push(ParseError::InvalidValue {
+                    line: line_num,
+                    key: raw_key,
+                    reason: parse_result.err().unwrap(),
+                });
+                continue;
+            };
+
+            if (nargs != 0) && (value.len() > nargs) {
+                errors.push(ParseError::TooMuchValues {
+                    line: line_num,
+                    key: raw_key,
+                    got_count: value.len(),
+                    expected_count: nargs,
+                });
+                continue;
+            }
+
+            if let Some(boundaries) = keyword.boundaries {
+                if check_boundaries(&value, boundaries) == false {
+                    errors.push(ParseError::OutOfBound {
+                        line: line_num,
                         key: raw_key,
-                        reason,
+                        value: String::from(raw_value),
+                        min: boundaries.0,
+                        max: boundaries.1,
                     });
+                    continue;
                 }
             }
+
+            let normalized_value: ConfigValue;
+            match normalize_choice(keyword, &value) {
+                Ok(new_value) => normalized_value = new_value,
+                Err(reasons) => {
+                    for reason in reasons {
+                        errors.push(ParseError::BadChoice {
+                            key: raw_key.clone(),
+                            line: line_num,
+                            value: value.clone(),
+                            reason,
+                        });
+                    }
+                    continue;
+                }
+            };
+            result.insert(keyword.name().clone(), normalized_value);
         }
 
         if errors.is_empty() {
@@ -83,6 +160,25 @@ impl Parser {
         } else {
             Err(errors)
         }
+    }
+
+    pub fn fill_missing_fields(&self, config: &mut HashMap<String, ConfigValue>) {
+        for keyword in self.dico {
+            let keyword_name = keyword.name();
+            if (keyword.level == 0) && !config.contains_key(keyword_name) {
+                config.insert(keyword_name.clone(), keyword.default());
+            }
+        }
+    }
+
+    pub fn config_from(
+        &self,
+        input: &str,
+    ) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
+        let mut config = self.parse(input)?;
+
+        self.fill_missing_fields(&mut config);
+        Ok(config)
     }
 }
 
@@ -113,313 +209,86 @@ fn strip_comment(line: &str) -> &str {
     line
 }
 
-fn parse_value(raw: &str, kind: DicoType) -> Result<ConfigValue, String> {
-    match kind {
-        DicoType::Logical => match raw.to_lowercase().as_str() {
-            "true" | "yes" | "1" | "on" => Ok(ConfigValue::Boolean(true)),
-            "false" | "no" | "0" | "off" => Ok(ConfigValue::Boolean(false)),
-            _ => Err(format!("'{}' is not a valid boolean", raw)),
-        },
-        DicoType::Integer => i64::from_str(raw)
-            .map(ConfigValue::Integer)
-            .map_err(|_| format!("'{}' is not a valid integer", raw)),
-        DicoType::Real => f64::from_str(raw)
-            .map(ConfigValue::Float)
-            .map_err(|_| format!("'{}' is not a valid float", raw)),
-        // DicoType::Path => {
-        //     let path = unquote(raw);
-        //     Ok(ConfigValue::Path(std::path::PathBuf::from(path)))
-        // }
-        DicoType::String => Ok(ConfigValue::String(unquote(raw).to_string())),
+fn check_boundaries(value: &ConfigValue, boundaries: (f64, f64)) -> bool {
+    match value {
+        ConfigValue::Integer(v) => {
+            let min: i64 = boundaries.0 as i64;
+            let max: i64 = boundaries.1 as i64;
+            min <= *v && *v <= max
+        }
+        ConfigValue::Float(v) => {
+            let min: f64 = boundaries.0;
+            let max: f64 = boundaries.1;
+            min <= *v && *v <= max
+        }
+        ConfigValue::IntegerCollection(values) => {
+            let min: i64 = boundaries.0 as i64;
+            let max: i64 = boundaries.1 as i64;
+            let mut result: bool = true;
+            for v in values {
+                if !(min <= *v && *v <= max) {
+                    result = false;
+                }
+            }
+            result
+        }
+        ConfigValue::FloatCollection(values) => {
+            let min: f64 = boundaries.0;
+            let max: f64 = boundaries.1;
+            let mut result: bool = true;
+            for v in values {
+                if !(min <= *v && *v <= max) {
+                    result = false;
+                }
+            }
+            result
+        }
+        _ => false,
     }
 }
 
-/// Remove surrounding quotes if present
-fn unquote(s: &str) -> &str {
-    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
-        &s[1..s.len() - 1]
+fn normalize_choice(
+    keyword: &DicoKeyword,
+    option: &ConfigValue,
+) -> Result<ConfigValue, Vec<dicofile::ChoiceValidationError>> {
+    let values: Vec<ConfigValue>;
+    let mut errors: Vec<dicofile::ChoiceValidationError> = Vec::new();
+
+    let error_mapper = |reason| {
+        vec![dicofile::ChoiceValidationError::InternalError {
+            value: option.clone(),
+            reason,
+        }]
+    };
+
+    if keyword.has_choices() {
+        if option.is_scalar() {
+            values = vec![option.clone()];
+        } else {
+            values = option.clone().into_scalars().map_err(error_mapper)?;
+        }
+
+        let mut output_vec: Vec<ConfigValue> = Vec::with_capacity(values.len());
+        for candidate in &values {
+            match keyword.normalize_choice(&candidate) {
+                Ok(new_value) => output_vec.push(new_value),
+                Err(reason) => errors.push(reason),
+            };
+        }
+
+        if errors.len() > 0 {
+            return Err(errors);
+        } else {
+            if option.is_scalar() {
+                return Ok(output_vec.remove(0));
+            } else {
+                return Ok(ConfigValue::collect(values).map_err(error_mapper)?);
+            }
+        }
     } else {
-        s
+        Ok(option.clone())
     }
 }
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_parser() -> Parser {
-        Parser::new([
-            ("who mom loves", DicoType::String),
-            ("my age", DicoType::Integer),
-            ("am i serious", DicoType::Logical),
-            ("my favorite number", DicoType::Real),
-        ])
-    }
-
-    // --- Helpers ---
-
-    fn parse_ok(input: &str) -> HashMap<String, ConfigValue> {
-        make_parser()
-            .parse(input)
-            .expect("Expected successful parse")
-    }
-
-    fn parse_err(input: &str) -> Vec<ParseError> {
-        make_parser()
-            .parse(input)
-            .expect_err("Expected parse errors")
-    }
-
-    // --- Happy path ---
-
-    #[test]
-    fn test_string_unquoted() {
-        let config = parse_ok("who mom loves = me");
-        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
-    }
-
-    #[test]
-    fn test_string_quoted() {
-        let config = parse_ok(r#"who mom loves = "definitely me""#);
-        assert_eq!(
-            config["who mom loves"],
-            ConfigValue::String("definitely me".into())
-        );
-    }
-
-    #[test]
-    fn test_integer() {
-        let config = parse_ok("my age = 25");
-        assert_eq!(config["my age"], ConfigValue::Integer(25));
-    }
-
-    #[test]
-    fn test_integer_negative() {
-        let config = parse_ok("my age = -5");
-        assert_eq!(config["my age"], ConfigValue::Integer(-5));
-    }
-
-    #[test]
-    fn test_float() {
-        let config = parse_ok("my favorite number = 3.14");
-        assert_eq!(config["my favorite number"], ConfigValue::Float(3.14));
-    }
-
-    #[test]
-    fn test_float_whole_number() {
-        let config = parse_ok("my favorite number = 42");
-        assert_eq!(config["my favorite number"], ConfigValue::Float(42.0));
-    }
-
-    #[test]
-    fn test_float_negative() {
-        let config = parse_ok("my favorite number = -2.718");
-        assert_eq!(config["my favorite number"], ConfigValue::Float(-2.718));
-    }
-
-    #[test]
-    fn test_boolean_true_variants() {
-        for val in &["true", "True", "TRUE", "yes", "Yes", "1", "on", "On"] {
-            let input = format!("am i serious = {}", val);
-            let config = parse_ok(&input);
-            assert_eq!(
-                config["am i serious"],
-                ConfigValue::Boolean(true),
-                "Failed for boolean input: {}",
-                val
-            );
-        }
-    }
-
-    #[test]
-    fn test_boolean_false_variants() {
-        for val in &["false", "False", "FALSE", "no", "No", "0", "off", "Off"] {
-            let input = format!("am i serious = {}", val);
-            let config = parse_ok(&input);
-            assert_eq!(
-                config["am i serious"],
-                ConfigValue::Boolean(false),
-                "Failed for boolean input: {}",
-                val
-            );
-        }
-    }
-
-    // #[test]
-    // fn test_path_bare() {
-    //     let config = parse_ok("where do i live = /my/house");
-    //     assert_eq!(
-    //         config["where do i live"],
-    //         ConfigValue::Path(std::path::PathBuf::from("/my/house"))
-    //     );
-    // }
-
-    // #[test]
-    // fn test_path_quoted() {
-    //     let config = parse_ok(r#"where do i live = "/my/cozy house""#);
-    //     assert_eq!(
-    //         config["where do i live"],
-    //         ConfigValue::Path(std::path::PathBuf::from("/my/cozy house"))
-    //     );
-    // }
-
-    // --- Case insensitivity ---
-
-    #[test]
-    fn test_key_case_insensitive_upper() {
-        let config = parse_ok("WHO MOM LOVES = me");
-        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
-    }
-
-    #[test]
-    fn test_key_mixed_case() {
-        let config = parse_ok("Who Mom Loves = me");
-        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
-    }
-
-    // --- Comments ---
-
-    #[test]
-    fn test_hash_comment_line() {
-        let config = parse_ok("# this is a comment\nmy age = 30");
-        assert_eq!(config["my age"], ConfigValue::Integer(30));
-    }
-
-    #[test]
-    fn test_slash_comment_line() {
-        let config = parse_ok("/ this is a comment\nmy age = 30");
-        assert_eq!(config["my age"], ConfigValue::Integer(30));
-    }
-
-    #[test]
-    fn test_inline_hash_comment() {
-        let config = parse_ok("my age = 30 # my real age");
-        assert_eq!(config["my age"], ConfigValue::Integer(30));
-    }
-
-    #[test]
-    fn test_inline_slash_comment() {
-        let config = parse_ok("my age = 30 / my real age");
-        assert_eq!(config["my age"], ConfigValue::Integer(30));
-    }
-
-    #[test]
-    fn test_comment_inside_quoted_string_preserved() {
-        let config = parse_ok(r#"who mom loves = "me / always""#);
-        assert_eq!(
-            config["who mom loves"],
-            ConfigValue::String("me / always".into())
-        );
-    }
-
-    #[test]
-    fn test_hash_inside_quoted_string_preserved() {
-        let config = parse_ok(r#"who mom loves = "me # always""#);
-        assert_eq!(
-            config["who mom loves"],
-            ConfigValue::String("me # always".into())
-        );
-    }
-
-    // --- Whitespace handling ---
-
-    #[test]
-    fn test_leading_trailing_whitespace_on_key() {
-        let config = parse_ok("  who mom loves  = me");
-        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
-    }
-
-    #[test]
-    fn test_leading_trailing_whitespace_on_value() {
-        let config = parse_ok("my age =   25  ");
-        assert_eq!(config["my age"], ConfigValue::Integer(25));
-    }
-
-    #[test]
-    fn test_empty_lines_ignored() {
-        let config = parse_ok("\n\nmy age = 25\n\n");
-        assert_eq!(config["my age"], ConfigValue::Integer(25));
-    }
-
-    // --- Multiple keys ---
-
-    #[test]
-    fn test_multiple_keys() {
-        let input = indoc::indoc! {"
-            who mom loves = me
-            my age = 25
-            am i serious = false
-            my favorite number = 3.14
-        "};
-        let config = parse_ok(input);
-        assert_eq!(config["who mom loves"], ConfigValue::String("me".into()));
-        assert_eq!(config["my age"], ConfigValue::Integer(25));
-        assert_eq!(config["am i serious"], ConfigValue::Boolean(false));
-        assert_eq!(config["my favorite number"], ConfigValue::Float(3.14));
-    }
-
-    #[test]
-    fn test_last_value_wins_on_duplicate_key() {
-        let config = parse_ok("my age = 20\nmy age = 99");
-        assert_eq!(config["my age"], ConfigValue::Integer(99));
-    }
-
-    // --- Error cases ---
-
-    #[test]
-    fn test_unknown_key_produces_error() {
-        let errors = parse_err("my cat = fluffy");
-        assert!(errors
-            .iter()
-            .any(|e| matches!(e, ParseError::UnknownKey(k) if k == "my cat")));
-    }
-
-    #[test]
-    fn test_invalid_integer() {
-        let errors = parse_err("my age = olderthandirt");
-        assert!(errors
-            .iter()
-            .any(|e| matches!(e, ParseError::InvalidValue { key, .. } if key == "my age")));
-    }
-
-    #[test]
-    fn test_invalid_float() {
-        let errors = parse_err("my favorite number = a lot");
-        assert!(errors.iter().any(
-            |e| matches!(e, ParseError::InvalidValue { key, .. } if key == "my favorite number")
-        ));
-    }
-
-    #[test]
-    fn test_invalid_boolean() {
-        let errors = parse_err("am i serious = maybe");
-        assert!(errors
-            .iter()
-            .any(|e| matches!(e, ParseError::InvalidValue { key, .. } if key == "am i serious")));
-    }
-
-    #[test]
-    fn test_missing_equals_sign() {
-        let errors = parse_err("my age 25");
-        assert!(errors
-            .iter()
-            .any(|e| matches!(e, ParseError::SyntaxError { .. })));
-    }
-
-    #[test]
-    fn test_multiple_errors_collected() {
-        let input = indoc::indoc! {"
-            my cat = fluffy
-            my age = olderthandirt
-            missing equals
-        "};
-        let errors = parse_err(input);
-        assert_eq!(errors.len(), 3);
-    }
-
-    #[test]
-    fn test_valid_and_invalid_lines_mixed() {
-        let input = "my age = 25\nmy cat = fluffy";
-        let errors = make_parser().parse(input).expect_err("should have errors");
-        assert_eq!(errors.len(), 1);
-    }
-}
+mod tests;
