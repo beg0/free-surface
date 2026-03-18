@@ -7,7 +7,6 @@ use std::collections::HashMap;
 
 use super::configvalue::{parse_value, ConfigValue};
 use super::dicofile;
-use super::dicofile::DicoKeyword;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -124,22 +123,21 @@ impl<'dico> Parser<'dico> {
                 continue;
             }
 
-            if let Some(boundaries) = keyword.boundaries {
-                if check_boundaries(&value, boundaries) == false {
-                    errors.push(ParseError::OutOfBound {
-                        line: line_num,
-                        key: raw_key,
-                        value: String::from(raw_value),
-                        min: boundaries.0,
-                        max: boundaries.1,
-                    });
-                    continue;
-                }
+            if let Some(boundaries) = keyword.boundaries
+                && !check_boundaries(&value, boundaries)
+            {
+                errors.push(ParseError::OutOfBound {
+                    line: line_num,
+                    key: raw_key,
+                    value: String::from(raw_value),
+                    min: boundaries.0,
+                    max: boundaries.1,
+                });
+                continue;
             }
 
-            let normalized_value: ConfigValue;
-            match normalize_choice(keyword, &value) {
-                Ok(new_value) => normalized_value = new_value,
+            let normalized_value = match keyword.normalize_choice(&value) {
+                Ok(new_value) => new_value,
                 Err(reasons) => {
                     for reason in reasons {
                         errors.push(ParseError::BadChoice {
@@ -244,49 +242,6 @@ fn check_boundaries(value: &ConfigValue, boundaries: (f64, f64)) -> bool {
             result
         }
         _ => false,
-    }
-}
-
-fn normalize_choice(
-    keyword: &DicoKeyword,
-    option: &ConfigValue,
-) -> Result<ConfigValue, Vec<dicofile::ChoiceValidationError>> {
-    let values: Vec<ConfigValue>;
-    let mut errors: Vec<dicofile::ChoiceValidationError> = Vec::new();
-
-    let error_mapper = |reason| {
-        vec![dicofile::ChoiceValidationError::InternalError {
-            value: option.clone(),
-            reason,
-        }]
-    };
-
-    if keyword.has_choices() {
-        if option.is_scalar() {
-            values = vec![option.clone()];
-        } else {
-            values = option.clone().into_scalars().map_err(error_mapper)?;
-        }
-
-        let mut output_vec: Vec<ConfigValue> = Vec::with_capacity(values.len());
-        for candidate in &values {
-            match keyword.normalize_choice(&candidate) {
-                Ok(new_value) => output_vec.push(new_value),
-                Err(reason) => errors.push(reason),
-            };
-        }
-
-        if errors.len() > 0 {
-            return Err(errors);
-        } else {
-            if option.is_scalar() {
-                return Ok(output_vec.remove(0));
-            } else {
-                return Ok(ConfigValue::collect(values).map_err(error_mapper)?);
-            }
-        }
-    } else {
-        Ok(option.clone())
     }
 }
 

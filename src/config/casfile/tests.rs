@@ -399,6 +399,28 @@ fn test_valid_and_invalid_lines_mixed() {
     assert_eq!(errors.len(), 1);
 }
 
+#[test]
+fn test_good_choice() {
+    let input = "sexe des enfants = GARCON;GIRL";
+    let config = parse_ok(input);
+
+    // Choices are normalized
+    assert_eq!(
+        config["SEX OF CHILDREN"],
+        ConfigValue::StringCollection(vec!["BOY".into(), "GIRL".into()])
+    );
+}
+
+#[test]
+fn test_wrong_choice() {
+    let input = "sexe des enfants = dog;girl";
+    let errors = parse_err(input);
+
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, ParseError::BadChoice { key, .. } if key == "sexe des enfants")));
+}
+
 // Ignore some french works for spelling
 // cSpell:ignore NOM INDEX MNEMO NIVEAU CHOIX
 // cSpell:ignore QUI MAMAN AIME

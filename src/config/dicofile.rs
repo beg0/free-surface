@@ -630,6 +630,47 @@ impl DicoKeyword {
 
     pub fn normalize_choice(
         &self,
+        option: &ConfigValue,
+    ) -> Result<ConfigValue, Vec<ChoiceValidationError>> {
+        let values: Vec<ConfigValue>;
+        let mut errors: Vec<ChoiceValidationError> = Vec::new();
+
+        let error_mapper = |reason| {
+            vec![ChoiceValidationError::InternalError {
+                value: option.clone(),
+                reason,
+            }]
+        };
+
+        if self.has_choices() {
+            if option.is_scalar() {
+                values = vec![option.clone()];
+            } else {
+                values = option.clone().into_scalars().map_err(error_mapper)?;
+            }
+
+            let mut output_vec: Vec<ConfigValue> = Vec::with_capacity(values.len());
+            for candidate in &values {
+                match self.normalize_single_choice(candidate) {
+                    Ok(new_value) => output_vec.push(new_value),
+                    Err(reason) => errors.push(reason),
+                };
+            }
+
+            if !errors.is_empty() {
+                Err(errors)
+            } else if option.is_scalar() {
+                Ok(output_vec.remove(0))
+            } else {
+                ConfigValue::collect(output_vec).map_err(error_mapper)
+            }
+        } else {
+            Ok(option.clone())
+        }
+    }
+
+    fn normalize_single_choice(
+        &self,
         value: &ConfigValue,
     ) -> Result<ConfigValue, ChoiceValidationError> {
         let mut option_pos: Option<usize> = None;
@@ -653,7 +694,7 @@ impl DicoKeyword {
                     .as_str()
                     == "en"
                 {
-                    return Ok(value.clone());
+                    Ok(value.clone())
                 } else {
                     let english_desc = self
                         .text_desc
@@ -665,15 +706,13 @@ impl DicoKeyword {
                         .get(pos)
                         .expect("Length of 'en' and other language does not match");
 
-                    return Ok(english_option_help.option.clone());
+                    Ok(english_option_help.option.clone())
                 }
             }
-            None => {
-                return Err(ChoiceValidationError::NotFound {
-                    value: value.clone(),
-                    choices: self.get_all_choices(),
-                })
-            }
+            None => Err(ChoiceValidationError::NotFound {
+                value: value.clone(),
+                choices: self.get_all_choices(),
+            }),
         }
     }
 }
