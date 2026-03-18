@@ -37,10 +37,10 @@ pub struct KeywordTextDescription {
 pub struct DicoKeyword {
     pub text_desc: HashMap<String, KeywordTextDescription>, // localized description
     pub type_: DicoType,
-    pub index: u32,
+    // pub index: u32,
     pub nargs: u32, // Number of time this keyword may occur. 0 means infinite
     pub submit: Vec<String>,
-    pub mnemo: String,                         // Variable name in code
+    //pub mnemo: String,                         // Variable name in code
     pub boundaries: Option<(f64, f64)>,        // min;max
     pub selection_control: Option<GuiControl>, // Which GUI control widget to use for this entry
     pub compose: Option<String>,
@@ -229,8 +229,6 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
         })
         .unwrap_or(DicoType::String);
 
-    let mnemo = require("MNEMO", &mut errors);
-
     let default_taille = ValueParseInfo {
         val: String::from("1"),
         line: 0,
@@ -318,6 +316,8 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
         choices_per_local.insert(String::from(locale), choices_values);
     }
 
+    // let mnemo = require("MNEMO", &mut errors);
+
     let apparence =
         get("APPARENCE").and_then(|desc| match unquote_single(desc.val.trim()).as_str() {
             "LIST" | "LISTE IS EDITABLE" => Some(GuiControl::List),
@@ -335,7 +335,7 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
             }
         });
 
-    let index = parse_u32_field("INDEX", get("INDEX"), &mut errors, start_line);
+    // let index = parse_u32_field("INDEX", get("INDEX"), &mut errors, start_line);
     let submit = get_val("SUBMIT")
         .map(|s| parse_semicolon_list(&s, false))
         .unwrap_or_default();
@@ -365,10 +365,10 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
     Ok(DicoKeyword {
         text_desc,
         type_,
-        index,
+        //index,
         nargs: taille,
         submit,
-        mnemo,
+        // mnemo,
         boundaries: controle,
         selection_control: apparence,
         compose: get_val("COMPOSE"),
