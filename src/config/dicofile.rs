@@ -19,11 +19,8 @@ pub enum GuiControl {
 
 #[derive(Debug, Clone)]
 pub struct ChoiceOptionHelp {
-    #[allow(dead_code)]
     option: ConfigValue,
-
-    #[allow(dead_code)]
-    help: String,
+    _help: String,
 }
 
 #[derive(Debug, Clone)]
@@ -292,7 +289,7 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
                     choices_values.push(option.clone());
                     choices_help.push(ChoiceOptionHelp {
                         option,
-                        help: help_text,
+                        _help: help_text,
                     });
                 }
                 Err(reason) => {
@@ -577,6 +574,106 @@ fn parse_rubrique(raw: &String) -> [String; 3] {
         items.get(1).cloned().unwrap_or_default(),
         items.get(2).cloned().unwrap_or_default(),
     ]
+}
+
+impl DicoKeyword {
+    pub fn name(&self) -> &String {
+        &self
+            .text_desc
+            .get("en")
+            .expect("No english description")
+            .name
+    }
+
+    pub fn default(&self) -> ConfigValue {
+        let text_desc = &self.text_desc.get("en");
+
+        let default_generator = || {
+            if self.nargs == 1 {
+                match &self.type_ {
+                    DicoType::String => ConfigValue::String(String::new()),
+                    DicoType::Integer => ConfigValue::Integer(0),
+                    DicoType::Logical => ConfigValue::Boolean(false),
+                    DicoType::Real => ConfigValue::Float(0.0),
+                }
+            } else {
+                match &self.type_ {
+                    DicoType::String => ConfigValue::StringCollection(vec![]),
+                    DicoType::Integer => ConfigValue::IntegerCollection(vec![]),
+                    DicoType::Logical => ConfigValue::BooleanCollection(vec![]),
+                    DicoType::Real => ConfigValue::FloatCollection(vec![]),
+                }
+            }
+        };
+        text_desc
+            .and_then(|desc| desc.default_val.clone())
+            .unwrap_or_else(default_generator)
+    }
+
+    pub fn has_choices(&self) -> bool {
+        let choice_cnt = self
+            .text_desc
+            .iter()
+            .fold(0, |acc, (_locale, desc)| acc + desc.choices_help.len());
+        choice_cnt > 0
+    }
+
+    fn get_all_choices(&self) -> Vec<ChoiceOptionHelp> {
+        let mut ret: Vec<ChoiceOptionHelp> = Vec::new();
+        for desc in self.text_desc.values() {
+            ret.append(&mut desc.choices_help.clone());
+        }
+        ret
+    }
+
+    pub fn normalize_choice(
+        &self,
+        value: &ConfigValue,
+    ) -> Result<ConfigValue, ChoiceValidationError> {
+        let mut option_pos: Option<usize> = None;
+        let mut option_locale: Option<&String> = None;
+        for (locale, desc) in &self.text_desc {
+            let research = desc
+                .choices_help
+                .iter()
+                .position(|choice_help| choice_help.option == *value);
+
+            if let Some(pos) = research {
+                option_pos = Some(pos);
+                option_locale = Some(locale);
+                break;
+            }
+        }
+        match option_pos {
+            Some(pos) => {
+                if option_locale
+                    .expect("'option_pos' not null but 'option_locale' not defined")
+                    .as_str()
+                    == "en"
+                {
+                    return Ok(value.clone());
+                } else {
+                    let english_desc = self
+                        .text_desc
+                        .get("en")
+                        .expect("No 'en' text description in keyword");
+
+                    let english_option_help = english_desc
+                        .choices_help
+                        .get(pos)
+                        .expect("Length of 'en' and other language does not match");
+
+                    return Ok(english_option_help.option.clone());
+                }
+            }
+            None => {
+                return Err(ChoiceValidationError::NotFound {
+                    value: value.clone(),
+                    choices: self.get_all_choices(),
+                })
+            }
+        }
+    }
 }
 
 // cSpell:ignore apparence choix liste fichier entier logique defaut rubrique niveau dynlist
