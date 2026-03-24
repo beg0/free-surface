@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use super::configvalue::{parse_value, ConfigValue};
 use super::dicofile;
-use super::textloc::UNKNOWN_FILE;
+use super::textloc::{TextLoc, UNKNOWN_FILE};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -16,37 +16,39 @@ pub enum ParseError {
         filename: String,
         error: std::io::Error,
     },
-    #[error("Unknown key at line {line}: '{key}'")]
-    UnknownKey { key: String, line: usize },
-    #[error("Invalid value for key '{key}' at line {line}: {reason}")]
+    #[error("{pos}: Unknown key: '{key}'")]
+    UnknownKey { pos: TextLoc, key: String },
+    #[error("{pos}: Invalid value for key '{key}': {reason}")]
     InvalidValue {
+        pos: TextLoc,
         key: String,
-        line: usize,
         reason: String,
     },
-    #[error("Too much values for key '{key}' at line {line}: got {got_count} but expected {expected_count}")]
+    #[error(
+        "{pos}: Too much values for key '{key}': got {got_count} but expected {expected_count}"
+    )]
     TooMuchValues {
+        pos: TextLoc,
         key: String,
-        line: usize,
         got_count: usize,
         expected_count: usize,
     },
-    #[error("Syntax error on line {line}: {reason}")]
-    SyntaxError { line: usize, reason: String },
+    #[error("{pos}: Syntax error: {reason}")]
+    SyntaxError { pos: TextLoc, reason: String },
     #[error(
-        "Value out of bound for key {key} at line {line}: value should be between {min} and {max}, got '{value}'"
+        "{pos}: Value out of bound for key {key}: value should be between {min} and {max}, got '{value}'"
     )]
     OutOfBound {
+        pos: TextLoc,
         key: String,
-        line: usize,
         value: String,
         min: f64,
         max: f64,
     },
-    #[error("Invalid value for key {key} at line {line}: {reason}")]
+    #[error("{pos}: Invalid value for key {key}: {reason}")]
     BadChoice {
+        pos: TextLoc,
         key: String,
-        line: usize,
         value: ConfigValue,
         #[source]
         reason: dicofile::ChoiceValidationError,
@@ -99,13 +101,14 @@ impl<'dico> Parser<'dico> {
     fn parse_from_content_and_filename(
         &self,
         input: &str,
-        _filename: &str,
+        filename: &str,
     ) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
         let mut result = HashMap::new();
         let mut errors = Vec::new();
 
         for (line_num, line) in input.lines().enumerate() {
             let line_num = line_num + 1;
+            let pos = TextLoc::from((filename, line_num));
 
             // Strip inline comments and trim
             let line = strip_comment(line).trim();
@@ -117,7 +120,7 @@ impl<'dico> Parser<'dico> {
             // Split on first '=' or ':'
             let Some(eq_pos) = line.find(['=', ':']) else {
                 errors.push(ParseError::SyntaxError {
-                    line: line_num,
+                    pos,
                     reason: "Missing assignment operator ('=' or ':') ".into(),
                 });
                 continue;
@@ -126,10 +129,7 @@ impl<'dico> Parser<'dico> {
             let raw_value = line[eq_pos + 1..].trim();
 
             let Some(keyword) = self.keywords.get(&raw_key.to_uppercase()) else {
-                errors.push(ParseError::UnknownKey {
-                    line: line_num,
-                    key: raw_key,
-                });
+                errors.push(ParseError::UnknownKey { pos, key: raw_key });
                 continue;
             };
 
@@ -139,7 +139,7 @@ impl<'dico> Parser<'dico> {
 
             let Ok(value) = parse_result else {
                 errors.push(ParseError::InvalidValue {
-                    line: line_num,
+                    pos,
                     key: raw_key,
                     reason: parse_result.err().unwrap(),
                 });
@@ -148,7 +148,7 @@ impl<'dico> Parser<'dico> {
 
             if (nargs != 0) && (value.len() > nargs) {
                 errors.push(ParseError::TooMuchValues {
-                    line: line_num,
+                    pos,
                     key: raw_key,
                     got_count: value.len(),
                     expected_count: nargs,
@@ -160,7 +160,7 @@ impl<'dico> Parser<'dico> {
                 && !check_boundaries(&value, boundaries)
             {
                 errors.push(ParseError::OutOfBound {
-                    line: line_num,
+                    pos,
                     key: raw_key,
                     value: String::from(raw_value),
                     min: boundaries.0,
@@ -175,7 +175,7 @@ impl<'dico> Parser<'dico> {
                     for reason in reasons {
                         errors.push(ParseError::BadChoice {
                             key: raw_key.clone(),
-                            line: line_num,
+                            pos: pos.clone(),
                             value: value.clone(),
                             reason,
                         });

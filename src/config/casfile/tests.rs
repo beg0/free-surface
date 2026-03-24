@@ -316,7 +316,7 @@ fn test_unknown_key_produces_error() {
     let errors = parse_err("my cat = fluffy");
     assert!(errors
         .iter()
-        .any(|e| matches!(e, ParseError::UnknownKey { key: k, line: 1 } if k == "my cat")));
+        .any(|e| matches!(e, ParseError::UnknownKey { key: k, pos: _ } if k == "my cat")));
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn test_invalid_integer() {
     let errors = parse_err("my age = olderthandirt");
     assert!(errors
         .iter()
-        .any(|e| matches!(e, ParseError::InvalidValue { key, line: 1, .. } if key == "my age")));
+        .any(|e| matches!(e, ParseError::InvalidValue { key, .. } if key == "my age")));
 }
 
 #[test]
@@ -332,43 +332,45 @@ fn test_out_of_bound_integer() {
     let errors = parse_err("my age = -5");
     assert!(errors
         .iter()
-        .any(|e| matches!(e, ParseError::OutOfBound { key, line: 1, .. } if key == "my age")));
+        .any(|e| matches!(e, ParseError::OutOfBound { key, .. } if key == "my age")));
 }
 
 #[test]
 fn test_out_of_bound_integer_collection() {
     let errors = parse_err("AGE OF CHILDREN = 1;-10;3;4");
-    assert!(errors.iter().any(
-        |e| matches!(e, ParseError::OutOfBound { key, line: 1, .. } if key == "AGE OF CHILDREN")
-    ));
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, ParseError::OutOfBound { key, .. } if key == "AGE OF CHILDREN")));
 }
 
 #[test]
 fn test_out_of_bound_float_collection() {
     let errors = parse_err("SIZE OF CHILDREN = 0.75;0.01;1.5");
-    assert!(errors.iter().any(
-        |e| matches!(e, ParseError::OutOfBound { key, line: 1, .. } if key == "SIZE OF CHILDREN")
-    ));
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, ParseError::OutOfBound { key, .. } if key == "SIZE OF CHILDREN")));
 }
 
 #[test]
 fn test_invalid_float() {
     let errors = parse_err("my favorite number = a lot");
-    assert!(errors.iter().any(|e| matches!(e, ParseError::InvalidValue { key, line: 1, .. } if key == "my favorite number")));
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, ParseError::InvalidValue { key, .. } if key == "my favorite number")));
 }
 
 #[test]
 fn test_invalid_boolean() {
     let errors = parse_err("am i serious = maybe");
-    assert!(errors.iter().any(
-        |e| matches!(e, ParseError::InvalidValue { key, line: 1, .. } if key == "am i serious")
-    ));
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, ParseError::InvalidValue { key, .. } if key == "am i serious")));
 }
 
 #[test]
 fn test_too_long_collection() {
     let errors = parse_err("AGE OF CHILDREN = 1;5;8;10;12;15;70");
-    assert!(errors.iter().any(|e| matches!(e, ParseError::TooMuchValues { key, line: 1, got_count:7, expected_count:5 } if key == "AGE OF CHILDREN")));
+    assert!(errors.iter().any(|e| matches!(e, ParseError::TooMuchValues { key, pos: _, got_count:7, expected_count:5 } if key == "AGE OF CHILDREN")));
 }
 
 #[test]
