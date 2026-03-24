@@ -7,9 +7,15 @@ use std::collections::HashMap;
 
 use super::configvalue::{parse_value, ConfigValue};
 use super::dicofile;
+use super::textloc::UNKNOWN_FILE;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
+    #[error("Can't open file {filename} for reading: {error}")]
+    FileOpenFailed {
+        filename: String,
+        error: std::io::Error,
+    },
     #[error("Unknown key at line {line}: '{key}'")]
     UnknownKey { key: String, line: usize },
     #[error("Invalid value for key '{key}' at line {line}: {reason}")]
@@ -67,7 +73,34 @@ impl<'dico> Parser<'dico> {
         ret
     }
 
+    /// Read a CAS file and parse it
+    #[allow(dead_code)]
+    pub fn parse_from_file(
+        &self,
+        filename: &String,
+    ) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
+        match std::fs::read_to_string(filename) {
+            Ok(cascontent) => {
+                self.parse_from_content_and_filename(cascontent.as_str(), filename.as_str())
+            }
+            Err(error) => Err(vec![ParseError::FileOpenFailed {
+                filename: filename.clone(),
+                error,
+            }]),
+        }
+    }
+
+    /// Parse a buffer containing the input of a CAS file
+    #[allow(dead_code)]
     pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
+        self.parse_from_content_and_filename(input, UNKNOWN_FILE)
+    }
+
+    fn parse_from_content_and_filename(
+        &self,
+        input: &str,
+        _filename: &str,
+    ) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
         let mut result = HashMap::new();
         let mut errors = Vec::new();
 
