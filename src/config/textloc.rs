@@ -5,15 +5,16 @@
 
 use std::convert::From;
 use std::fmt;
+use std::sync::Arc;
 
 pub const UNKNOWN_FILE: &str = "<unknown>";
 
 /// A localisation in a text file
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct TextLoc {
-    filename: String, // Filename if any, an empty string otherwise
-    line: usize,      // Line number in the file, starting to 1
-    column: usize,    // Column number in the line, starting to 1. 0 if not set
+    filename: Arc<String>, // Filename if any, an empty string otherwise
+    line: usize,           // Line number in the file, starting to 1
+    column: usize,         // Column number in the line, starting to 1. 0 if not set
 }
 
 // Impl From with filename
@@ -22,7 +23,7 @@ pub struct TextLoc {
 impl From<(&str, usize)> for TextLoc {
     fn from((filename, line): (&str, usize)) -> Self {
         Self {
-            filename: String::from(filename),
+            filename: Arc::new(String::from(filename)),
             line,
             column: 0,
         }
@@ -32,7 +33,7 @@ impl From<(&str, usize)> for TextLoc {
 impl From<(String, usize)> for TextLoc {
     fn from((filename, line): (String, usize)) -> Self {
         Self {
-            filename,
+            filename: Arc::new(filename),
             line,
             column: 0,
         }
@@ -42,7 +43,7 @@ impl From<(String, usize)> for TextLoc {
 impl From<(String, usize, usize)> for TextLoc {
     fn from((filename, line, column): (String, usize, usize)) -> Self {
         Self {
-            filename,
+            filename: Arc::new(filename),
             line,
             column,
         }
@@ -55,7 +56,7 @@ impl From<(String, usize, usize)> for TextLoc {
 impl From<usize> for TextLoc {
     fn from(line: usize) -> Self {
         Self {
-            filename: String::new(),
+            filename: Arc::new(String::new()),
             line,
             column: 0,
         }
@@ -65,7 +66,7 @@ impl From<usize> for TextLoc {
 impl From<(usize, usize)> for TextLoc {
     fn from((line, column): (usize, usize)) -> Self {
         Self {
-            filename: String::new(),
+            filename: Arc::new(String::new()),
             line,
             column,
         }
@@ -95,9 +96,40 @@ impl TextLoc {
     #[allow(dead_code)]
     pub fn clone_with_line(&self, line: usize) -> TextLoc {
         TextLoc {
-            filename: self.filename.clone(),
+            filename: Arc::clone(&self.filename),
             line,
             column: 0,
         }
+    }
+
+    /// Clone this TextLoc and add an offset to the line number
+    pub fn clone_with_line_offset(&self, line_offset: usize) -> TextLoc {
+        TextLoc {
+            filename: Arc::clone(&self.filename),
+            line: self.line + line_offset,
+            column: 0,
+        }
+    }
+
+    /// Get the filename associated with this position
+    #[allow(dead_code)]
+    pub fn filename(&self) -> &String {
+        #[allow(clippy::explicit_auto_deref)]
+        &*self.filename
+    }
+
+    /// Get the line number associated with this position
+    /// Line numbers starts at 1. a 0 means anywhere in the file
+    #[allow(dead_code)]
+    pub fn line(&self) -> usize {
+        self.line
+    }
+
+    /// Get the column in the line associated with this position
+    /// 0 means no specific column is specified. It can be the full line or anywhere
+    /// on the line.
+    #[allow(dead_code)]
+    pub fn column(&self) -> usize {
+        self.column
     }
 }

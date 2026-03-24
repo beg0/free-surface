@@ -2,6 +2,8 @@ use super::dicofile::parse_dico;
 use super::dicofile::Dico;
 use super::*;
 
+const MY_FILE: &str = "/dave/null";
+
 fn make_dico() -> Dico {
     let dico_content = indoc::indoc! {"
         NOM = QUI MAMAN AIME
@@ -78,7 +80,7 @@ fn make_dico() -> Dico {
         INDEX = 9
         NIVEAU = 2
     "};
-    parse_dico(dico_content).expect("Can't create dico")
+    parse_dico(dico_content, MY_FILE).expect("Can't create dico")
 }
 
 // --- Helpers ---

@@ -6,6 +6,7 @@
 //! Telemac3D, Artemis, Tomawac...)
 use super::configvalue::{parse_single_value, parse_value, ConfigValue, DicoType};
 use super::parse_helpers::unquote_single;
+use super::textloc::TextLoc;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -50,42 +51,40 @@ pub struct DicoKeyword {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DicoParseError {
-    #[error("Missing required field '{field}' in keyword block at line {line}")]
-    MissingField { field: &'static str, line: usize },
-    #[error("Unknown field '{field}' on line {line}")]
-    UnknownField { field: String, line: usize },
-    #[error("Invalid value for field '{field}' at {line}: {reason}")]
+    #[error("{pos}: Missing required field '{field}' in keyword block")]
+    MissingField { field: &'static str, pos: TextLoc },
+    #[error("{pos}: Unknown field '{field}'")]
+    UnknownField { field: String, pos: TextLoc },
+    #[error("{pos}: Invalid value for field '{field}': {reason}")]
     InvalidValue {
         field: String,
         reason: String,
-        line: usize,
+        pos: TextLoc,
     },
-    #[error("Invalid default value '{value}' in field {field} at {line}: {reason}")]
+    #[error("{pos}: Invalid default value '{value}' in field {field}: {reason}")]
     InvalidDefaultValue {
         field: String,
         value: String,
         reason: String,
-        line: usize,
+        pos: TextLoc,
     },
-    #[error("Invalid value for choice '{option}' in field {field} at {line}: {reason}")]
+    #[error("{pos}: Invalid value for choice '{option}' in field {field}: {reason}")]
     InvalidChoice {
         field: String,
         option: String,
         reason: String,
-        line: usize,
+        pos: TextLoc,
     },
-    // #[error("Inconsistent options at {line} between choices for {lang1} and {lang2}. Got {choices1} and {choices2}")]
+    // #[error("{pos}: Inconsistent options between choices for {lang1} and {lang2}. Got {choices1} and {choices2}")]
     // InconsistentChoiceOption {
     //     lang1: String,
     //     lang2: String,
     //     choices1: Vec<ConfigValue>,
     //     choices2: Vec<ConfigValue>,
-    //     line: usize,
+    //     pos: TextLoc,
     // },
-    #[error("Inconsistent options at {line} between choices for different languages.")]
-    InconsistentChoiceOption { line: usize },
-    // #[error("Malformed line {line}: '{content}'")]
-    // MalformedLine { line: usize, content: String },
+    #[error("{pos}: Inconsistent options between choices for different languages.")]
+    InconsistentChoiceOption { pos: TextLoc },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -100,17 +99,19 @@ pub enum ChoiceValidationError {
 }
 struct ValueParseInfo {
     val: String,
-    line: usize,
+    pos: TextLoc,
 }
 struct BlockParseInfo {
     val: String,
-    start_line: usize,
+    pos: TextLoc,
 }
 
 pub type Dico = Vec<DicoKeyword>;
 
-pub fn parse_dico(input: &str) -> Result<Dico, Vec<DicoParseError>> {
-    let blocks = split_into_blocks(input);
+pub fn parse_dico(input: &str, filename: &str) -> Result<Dico, Vec<DicoParseError>> {
+    let file_pos = TextLoc::from((filename, 0));
+
+    let blocks = split_into_blocks(input, &file_pos);
     let mut keywords: Dico = Vec::new();
     let mut errors: Vec<DicoParseError> = Vec::new();
 
@@ -118,7 +119,7 @@ pub fn parse_dico(input: &str) -> Result<Dico, Vec<DicoParseError>> {
         if block.val.trim().is_empty() {
             continue;
         }
-        match parse_block(&block.val, block.start_line) {
+        match parse_block(&block.val, &block.pos) {
             Ok(kw) => keywords.push(kw),
             Err(mut errs) => errors.append(&mut errs),
         }
@@ -133,7 +134,7 @@ pub fn parse_dico(input: &str) -> Result<Dico, Vec<DicoParseError>> {
 
 /// Split the file into blocks delimited by a lone "/" on its own line.
 /// Lines starting with "///" or "////////" are section headers - skip them.
-fn split_into_blocks(input: &str) -> Vec<BlockParseInfo> {
+fn split_into_blocks(input: &str, file_pos: &TextLoc) -> Vec<BlockParseInfo> {
     let mut blocks: Vec<BlockParseInfo> = Vec::new();
     let mut current = String::new();
     let mut start_line = 0;
@@ -151,7 +152,7 @@ fn split_into_blocks(input: &str) -> Vec<BlockParseInfo> {
             if !current.trim().is_empty() {
                 blocks.push(BlockParseInfo {
                     val: current,
-                    start_line,
+                    pos: file_pos.clone_with_line(start_line + 1),
                 });
                 current = String::new();
                 start_line = line_idx;
@@ -171,7 +172,7 @@ fn split_into_blocks(input: &str) -> Vec<BlockParseInfo> {
     if !current.trim().is_empty() {
         blocks.push(BlockParseInfo {
             val: current,
-            start_line,
+            pos: file_pos.clone_with_line(start_line + 1),
         });
     }
 
@@ -179,9 +180,9 @@ fn split_into_blocks(input: &str) -> Vec<BlockParseInfo> {
 }
 
 /// Parse a single keyword block into key->raw_value pairs, then build a DicoKeyword.
-fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoParseError>> {
+fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<DicoParseError>> {
     let mut errors = Vec::new();
-    let fields = parse_fields(block, &mut errors, start_line);
+    let fields = parse_fields(block, &mut errors, block_pos);
 
     let mut text_desc: HashMap<String, KeywordTextDescription> = HashMap::new();
     let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
@@ -205,7 +206,7 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
             None => {
                 errors.push(DicoParseError::MissingField {
                     field: key,
-                    line: start_line + 1,
+                    pos: block_pos.clone(),
                 });
                 String::new()
             }
@@ -222,7 +223,7 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
                 errors.push(DicoParseError::InvalidValue {
                     field: "TYPE".into(),
                     reason: format!("unknown type '{}'", other),
-                    line: desc.line + 1,
+                    pos: desc.pos.clone(),
                 });
                 None
             }
@@ -231,14 +232,14 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
 
     let default_taille = ValueParseInfo {
         val: String::from("1"),
-        line: 0,
+        pos: block_pos.clone(),
     };
 
     let taille = parse_u32_field(
         "TAILLE",
         get("TAILLE").or(Some(&default_taille)),
         &mut errors,
-        start_line,
+        block_pos,
     );
 
     let french_names = ("NOM", "AIDE", "DEFAUT", "CHOIX", "RUBRIQUE");
@@ -247,29 +248,30 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
     for (locale, names) in [("fr", french_names), ("en", english_names)] {
         let name = require(names.0, &mut errors);
         let help = get_val(names.1).unwrap_or_default();
-        let default_val_str = get_val(names.2);
+        let default_val_str = get(names.2);
 
-        let default_val = default_val_str.and_then(|value| {
-            match parse_value(value.as_str(), &type_, taille.try_into().unwrap()) {
+        let default_val = default_val_str.and_then(|desc| {
+            match parse_value(desc.val.as_str(), &type_, taille.try_into().unwrap()) {
                 Ok(option) => Some(option),
                 Err(reason) => {
                     errors.push(DicoParseError::InvalidDefaultValue {
                         field: String::from(names.2),
-                        value,
+                        value: desc.val.clone(),
                         reason,
-                        line: start_line + 1,
+                        pos: desc.pos.clone(),
                     });
                     None
                 }
             }
         });
 
-        let choices_text = get_raw_val(names.3)
-            .map(|s| parse_semicolon_list(s, true))
-            .unwrap_or_default();
+        let choices_text_with_loc = get(names.3)
+            .map(|desc| (parse_semicolon_list(&desc.val, true), desc.pos.clone()))
+            .unwrap_or((Vec::<String>::new(), TextLoc::default()));
 
         let classification = get_raw_val(names.4).map(parse_rubrique).unwrap_or_default();
 
+        let choices_text = &choices_text_with_loc.0;
         let mut choices_help: Vec<ChoiceOptionHelp> = Vec::with_capacity(choices_text.len());
         let mut choices_values: Vec<ConfigValue> = Vec::with_capacity(choices_text.len());
 
@@ -297,7 +299,7 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
                         field: String::from(names.3),
                         option: String::from(option_text),
                         reason,
-                        line: start_line + 1,
+                        pos: choices_text_with_loc.1.clone(),
                     });
                 }
             };
@@ -329,17 +331,17 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
                 errors.push(DicoParseError::InvalidValue {
                     field: "APPARENCE".into(),
                     reason: format!("unknown apparence '{}'", other),
-                    line: desc.line + 1,
+                    pos: desc.pos.clone(),
                 });
                 None
             }
         });
 
-    // let index = parse_u32_field("INDEX", get("INDEX"), &mut errors, start_line);
+    // let index = parse_u32_field("INDEX", get("INDEX"), &mut errors, block_pos);
     let submit = get_val("SUBMIT")
         .map(|s| parse_semicolon_list(&s, false))
         .unwrap_or_default();
-    let niveau = parse_u32_field("NIVEAU", get("NIVEAU"), &mut errors, start_line);
+    let niveau = parse_u32_field("NIVEAU", get("NIVEAU"), &mut errors, block_pos);
 
     let controle = get("CONTROLE").and_then(|desc| parse_controle(desc, &mut errors));
 
@@ -354,7 +356,7 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
 
     if choices_cnt_fr != choices_cnt_en {
         errors.push(DicoParseError::InconsistentChoiceOption {
-            line: start_line + 1,
+            pos: block_pos.clone(),
         });
     }
 
@@ -382,11 +384,11 @@ fn parse_block(block: &str, start_line: usize) -> Result<DicoKeyword, Vec<DicoPa
 fn parse_fields(
     block: &str,
     errors: &mut Vec<DicoParseError>,
-    start_line: usize,
+    block_pos: &TextLoc,
 ) -> HashMap<String, ValueParseInfo> {
     let mut fields: HashMap<String, ValueParseInfo> = HashMap::new();
     let mut current_key: Option<String> = None;
-    let mut current_key_line: usize = start_line;
+    let mut current_key_line: usize = block_pos.line();
     let mut current_value = String::new();
     let mut in_quote = false;
 
@@ -437,18 +439,18 @@ fn parse_fields(
                             key,
                             ValueParseInfo {
                                 val: current_value.trim().to_string(),
-                                line: current_key_line,
+                                pos: block_pos.clone_with_line_offset(current_key_line),
                             },
                         );
                     }
                     current_key = Some(candidate_key);
-                    current_key_line = start_line + line_idx;
+                    current_key_line = line_idx;
                     current_value = trimmed[eq_pos + 1..].trim().to_string();
                     continue;
                 } else {
                     errors.push(DicoParseError::UnknownField {
                         field: candidate_key,
-                        line: start_line + line_idx + 1,
+                        pos: block_pos.clone_with_line_offset(line_idx),
                     });
                 }
             }
@@ -475,7 +477,7 @@ fn parse_fields(
             key,
             ValueParseInfo {
                 val: current_value.trim().to_string(),
-                line: current_key_line,
+                pos: block_pos.clone_with_line_offset(current_key_line),
             },
         );
     }
@@ -507,21 +509,21 @@ fn parse_u32_field(
     name: &'static str,
     description: Option<&ValueParseInfo>,
     errors: &mut Vec<DicoParseError>,
-    block_start_line: usize,
+    block_pos: &TextLoc,
 ) -> u32 {
     match description {
         Some(desc) => desc.val.trim().parse::<u32>().unwrap_or_else(|_| {
             errors.push(DicoParseError::InvalidValue {
                 field: name.into(),
                 reason: format!("'{}' is not a valid unsigned integer", desc.val),
-                line: desc.line + 1,
+                pos: desc.pos.clone(),
             });
             0
         }),
         None => {
             errors.push(DicoParseError::MissingField {
                 field: name,
-                line: block_start_line + 1,
+                pos: block_pos.clone(),
             });
             0
         }
@@ -534,7 +536,7 @@ fn parse_controle(desc: &ValueParseInfo, errors: &mut Vec<DicoParseError>) -> Op
         errors.push(DicoParseError::InvalidValue {
             field: "CONTROLE".into(),
             reason: format!("expected 'min;max', got '{}'", desc.val),
-            line: desc.line + 1,
+            pos: desc.pos.clone(),
         });
         return None;
     }
