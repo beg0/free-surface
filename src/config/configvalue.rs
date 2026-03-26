@@ -1,6 +1,6 @@
 //! # Configuration Value
 //!
-use super::parse_helpers::unquote_single;
+use super::parse_helpers::{parse_fortran_float, unquote_single};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -83,7 +83,7 @@ pub fn parse_single_value(raw: &str, kind: &DicoType) -> Result<ConfigValue, Str
         DicoType::Integer => i64::from_str(raw)
             .map(ConfigValue::Integer)
             .map_err(|_| format!("'{}' is not a valid integer", raw)),
-        DicoType::Real => f64::from_str(raw)
+        DicoType::Real => parse_fortran_float(raw)
             .map(ConfigValue::Float)
             .map_err(|_| format!("'{}' is not a valid float", raw)),
         // DicoType::Path => {
@@ -139,7 +139,7 @@ pub fn parse_collection_values(
             let mut converted_values: Vec<f64> = Vec::with_capacity(raw_value_list.len());
             let mut invalid_values: Vec<&str> = Vec::new();
             for entry in raw_value_list {
-                match f64::from_str(entry) {
+                match parse_fortran_float(entry) {
                     Ok(val) => converted_values.push(val),
                     Err(_) => invalid_values.push(entry),
                 }
