@@ -5,7 +5,7 @@
 //! for steering files (a.k.a "cas" file) for a given program (Telemac2D,
 //! Telemac3D, Artemis, Tomawac...)
 use super::configvalue::{parse_single_value, parse_value, ConfigValue, DicoType};
-use super::parse_helpers::unquote_single;
+use super::parse_helpers::{find_key_assignment, parse_fields, unquote_single};
 use super::textloc::TextLoc;
 use std::collections::HashMap;
 
@@ -182,7 +182,7 @@ fn split_into_blocks(input: &str, file_pos: &TextLoc) -> Vec<BlockParseInfo> {
 /// Parse a single keyword block into key->raw_value pairs, then build a DicoKeyword.
 fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<DicoParseError>> {
     let mut errors = Vec::new();
-    let fields = parse_fields(block, &mut errors, block_pos);
+    let fields = parse_dico_fields(block, &mut errors, block_pos);
 
     let mut text_desc: HashMap<String, KeywordTextDescription> = HashMap::new();
     let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
@@ -381,16 +381,12 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
 
 /// Parse "key = value" pairs from a block, handling multiline values.
 /// A new key starts when a line matches "IDENTIFIER = ...".
-fn parse_fields(
+fn parse_dico_fields(
     block: &str,
     errors: &mut Vec<DicoParseError>,
     block_pos: &TextLoc,
 ) -> HashMap<String, ValueParseInfo> {
     let mut fields: HashMap<String, ValueParseInfo> = HashMap::new();
-    let mut current_key: Option<String> = None;
-    let mut current_key_line: usize = block_pos.line();
-    let mut current_value = String::new();
-    let mut in_quote = false;
 
     let known_keys = [
         "NOM1",
@@ -415,94 +411,19 @@ fn parse_fields(
         "AIDE",
     ];
 
-    for (line_idx, line) in block.lines().enumerate() {
-        let trimmed = if in_quote {
-            line.trim_end()
-        } else {
-            line.trim()
-        };
-
-        if !in_quote {
-            if trimmed.is_empty() {
-                continue;
+    parse_fields(
+        block,
+        block_pos,
+        |key: String, value: String, pos: TextLoc| {
+            if known_keys.contains(&key.as_str()) {
+                fields.insert(key, ValueParseInfo { val: value, pos });
+            } else {
+                errors.push(DicoParseError::UnknownField { field: key, pos });
             }
-
-            // Check if this line starts a new key: "KEYWORD = ..."
-            // A key is all-uppercase (and underscores/digits), followed by " = "
-            if let Some(eq_pos) = find_key_assignment(trimmed, true) {
-                let candidate_key = trimmed[..eq_pos].trim().to_uppercase();
-
-                if known_keys.contains(&candidate_key.as_str()) {
-                    // Save the previous key
-                    if let Some(key) = current_key.take() {
-                        fields.insert(
-                            key,
-                            ValueParseInfo {
-                                val: current_value.trim().to_string(),
-                                pos: block_pos.clone_with_line_offset(current_key_line),
-                            },
-                        );
-                    }
-                    current_key = Some(candidate_key);
-                    current_key_line = line_idx;
-                    current_value = trimmed[eq_pos + 1..].trim().to_string();
-                    continue;
-                } else {
-                    errors.push(DicoParseError::UnknownField {
-                        field: candidate_key,
-                        pos: block_pos.clone_with_line_offset(line_idx),
-                    });
-                }
-            }
-        }
-
-        let quote_count = trimmed.chars().filter(|c| *c == '\'').count();
-
-        // If there is an even number of quote, it means we either close or open a quote
-        // block
-        if (quote_count % 2) == 1 {
-            in_quote = !in_quote
-        }
-
-        // Continuation of current value
-        if current_key.is_some() {
-            current_value.push('\n');
-            current_value.push_str(trimmed);
-        }
-    }
-
-    // Don't forget the last key
-    if let Some(key) = current_key {
-        fields.insert(
-            key,
-            ValueParseInfo {
-                val: current_value.trim().to_string(),
-                pos: block_pos.clone_with_line_offset(current_key_line),
-            },
-        );
-    }
+        },
+    );
 
     fields
-}
-
-/// Returns the position of '=' if the line looks like "KEY = value"
-/// where KEY is uppercase letters, digits, underscores, and spaces.
-fn find_key_assignment(line: &str, check_key: bool) -> Option<usize> {
-    let eq_pos = line.find('=')?;
-    let key_part = line[..eq_pos].trim();
-    // Key must be non-empty and contain only uppercase letters, digits, underscores
-    if key_part.is_empty() {
-        return None;
-    }
-    let valid = !check_key
-        || key_part
-            .chars()
-            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
-    if valid {
-        Some(eq_pos)
-    } else {
-        None
-    }
 }
 
 fn parse_u32_field(

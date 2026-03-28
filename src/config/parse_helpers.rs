@@ -1,6 +1,7 @@
 //! # Parse helpers
 //!
 //! Helper functions to parse config files
+use super::textloc::TextLoc;
 
 /// Remove surrounding single quotes, and unescape '' -> '
 pub fn unquote_single(s: &str) -> String {
@@ -32,6 +33,95 @@ pub fn parse_fortran_float(s: &str) -> Result<f64, std::num::ParseFloatError> {
         .collect();
 
     normalized.parse::<f64>()
+}
+
+/// Parse "key = value" pairs from a block, handling multiline values.
+/// A new key starts when a line matches "IDENTIFIER = ...".
+pub fn parse_fields<T: FnMut(String, String, TextLoc)>(
+    input: &str,
+    initial_pos: &TextLoc,
+    mut new_field: T,
+) {
+    let mut current_key: Option<String> = None;
+    let mut current_key_line: usize = initial_pos.line();
+    let mut current_value = String::new();
+    let mut in_quote = false;
+
+    for (line_idx, line) in input.lines().enumerate() {
+        let trimmed = if in_quote {
+            line.trim_end()
+        } else {
+            line.trim()
+        };
+
+        if !in_quote {
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Check if this line starts a new key: "KEYWORD = ..."
+            // A key is all-uppercase (and underscores/digits), followed by " = "
+            if let Some(eq_pos) = find_key_assignment(trimmed, true) {
+                let candidate_key = trimmed[..eq_pos].trim().to_uppercase();
+
+                // Save the previous key
+                if let Some(key) = current_key.take() {
+                    new_field(
+                        key,
+                        current_value.trim().to_string(),
+                        initial_pos.clone_with_line_offset(current_key_line),
+                    );
+                }
+                current_key = Some(candidate_key);
+                current_key_line = line_idx;
+                current_value = trimmed[eq_pos + 1..].trim().to_string();
+                continue;
+            }
+        }
+
+        let quote_count = trimmed.chars().filter(|c| *c == '\'').count();
+
+        // If there is an even number of quote, it means we either close or open a quote
+        // block
+        if (quote_count % 2) == 1 {
+            in_quote = !in_quote
+        }
+
+        // Continuation of current value
+        if current_key.is_some() {
+            current_value.push('\n');
+            current_value.push_str(trimmed);
+        }
+    }
+
+    // Don't forget the last key
+    if let Some(key) = current_key {
+        new_field(
+            key,
+            current_value.trim().to_string(),
+            initial_pos.clone_with_line_offset(current_key_line),
+        );
+    }
+}
+
+/// Returns the position of '=' if the line looks like "KEY = value"
+/// where KEY is uppercase letters, digits, underscores, and spaces.
+pub fn find_key_assignment(line: &str, check_key: bool) -> Option<usize> {
+    let eq_pos = line.find([':', '='])?;
+    let key_part = line[..eq_pos].trim();
+    // Key must be non-empty and contain only uppercase letters, digits, underscores
+    if key_part.is_empty() {
+        return None;
+    }
+    let valid = !check_key
+        || key_part
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+    if valid {
+        Some(eq_pos)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
