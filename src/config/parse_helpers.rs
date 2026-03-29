@@ -35,6 +35,14 @@ pub fn parse_fortran_float(s: &str) -> Result<f64, std::num::ParseFloatError> {
     normalized.parse::<f64>()
 }
 
+fn toggle_single_quote(v: &str) -> bool {
+    let quote_count = v.chars().filter(|c| *c == '\'').count();
+
+    // If there is an even number of quote, it means we either close or open a quote
+    // block
+    (quote_count % 2) == 1
+}
+
 /// Parse "key = value" pairs from a block, handling multiline values.
 /// A new key starts when a line matches "IDENTIFIER = ...".
 pub fn parse_fields<T: FnMut(String, String, TextLoc)>(
@@ -75,16 +83,16 @@ pub fn parse_fields<T: FnMut(String, String, TextLoc)>(
                 current_key = Some(candidate_key);
                 current_key_line = line_idx;
                 current_value = trimmed[eq_pos + 1..].trim().to_string();
+
+                if toggle_single_quote(current_value.as_str()) {
+                    in_quote = !in_quote;
+                }
                 continue;
             }
         }
 
-        let quote_count = trimmed.chars().filter(|c| *c == '\'').count();
-
-        // If there is an even number of quote, it means we either close or open a quote
-        // block
-        if (quote_count % 2) == 1 {
-            in_quote = !in_quote
+        if toggle_single_quote(trimmed) {
+            in_quote = !in_quote;
         }
 
         // Continuation of current value
