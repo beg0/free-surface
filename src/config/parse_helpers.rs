@@ -5,6 +5,8 @@ use super::textloc::TextLoc;
 
 #[cfg(test)]
 mod tests {
+    mod find_key_assignment;
+    mod parse_fields;
     mod parse_fortran_float;
     mod unquote_single;
 }
