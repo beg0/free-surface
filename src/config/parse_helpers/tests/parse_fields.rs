@@ -7,13 +7,24 @@ use super::super::{parse_fields, TextLoc};
 
 // --- Helper ---
 
+fn key_is_uppercase_and_digit(candidate: &str) -> bool {
+    candidate
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
 /// Collect all (key, value, loc) triples produced by parse_fields
 fn collect_fields(input: &str) -> Vec<(String, String, TextLoc)> {
     let initial_pos = TextLoc::from(("test.txt", 1));
     let mut fields = Vec::new();
-    parse_fields(input, &initial_pos, |key, value, loc| {
-        fields.push((key, value, loc));
-    });
+    parse_fields(
+        input,
+        &initial_pos,
+        |key, value, loc| {
+            fields.push((key.to_string(), value, loc));
+        },
+        key_is_uppercase_and_digit,
+    );
     fields
 }
 
@@ -230,9 +241,14 @@ fn test_initial_pos_line_offset_applied() {
     // If initial_pos starts at line 10, all locations should be offset
     let initial_pos = TextLoc::from(("file.txt", 10));
     let mut fields = Vec::new();
-    parse_fields("KEY1 = v1\nKEY2 = v2", &initial_pos, |k, v, loc| {
-        fields.push((k, v, loc));
-    });
+    parse_fields(
+        "KEY1 = v1\nKEY2 = v2",
+        &initial_pos,
+        |k, v, loc| {
+            fields.push((k, v, loc));
+        },
+        key_is_uppercase_and_digit,
+    );
     assert_eq!(fields[0].2.line(), 10);
     assert_eq!(fields[1].2.line(), 11);
 }

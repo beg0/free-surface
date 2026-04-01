@@ -57,6 +57,7 @@ pub fn parse_fields<T: FnMut(String, String, TextLoc)>(
     input: &str,
     initial_pos: &TextLoc,
     mut new_field: T,
+    key_validation_fct: fn(&str) -> bool,
 ) {
     let mut current_key: Option<String> = None;
     let mut current_key_line: usize = initial_pos.line();
@@ -77,7 +78,7 @@ pub fn parse_fields<T: FnMut(String, String, TextLoc)>(
 
             // Check if this line starts a new key: "KEYWORD = ..."
             // A key is all-uppercase (and underscores/digits), followed by " = "
-            if let Some(eq_pos) = find_key_assignment(trimmed, true) {
+            if let Some(eq_pos) = find_key_assignment(trimmed, key_validation_fct) {
                 let candidate_key = trimmed[..eq_pos].trim().to_uppercase();
 
                 // Save the previous key
@@ -122,18 +123,15 @@ pub fn parse_fields<T: FnMut(String, String, TextLoc)>(
 
 /// Returns the position of '=' if the line looks like "KEY = value"
 /// where KEY is uppercase letters, digits, underscores, and spaces.
-pub fn find_key_assignment(line: &str, check_key: bool) -> Option<usize> {
+pub fn find_key_assignment(line: &str, key_validation_fct: fn(&str) -> bool) -> Option<usize> {
     let eq_pos = line.find([':', '='])?;
     let key_part = line[..eq_pos].trim();
     // Key must be non-empty and contain only uppercase letters, digits, underscores
     if key_part.is_empty() {
         return None;
     }
-    let valid = !check_key
-        || key_part
-            .chars()
-            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
-    if valid {
+
+    if key_validation_fct(key_part) {
         Some(eq_pos)
     } else {
         None

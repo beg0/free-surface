@@ -278,7 +278,7 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
         for entry in choices_text {
             let option_text: &str;
             let help_text: String;
-            if let Some(eq_pos) = find_key_assignment(entry.as_str(), false) {
+            if let Some(eq_pos) = find_key_assignment(entry.as_str(), validate_choice_key) {
                 option_text = entry.as_str()[..eq_pos].trim();
                 help_text = String::from(entry.as_str()[eq_pos..].trim());
             } else {
@@ -379,6 +379,23 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
     })
 }
 
+fn validate_dico_key(candidate: &str) -> bool {
+    candidate
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn validate_choice_key(candidate: &str) -> bool {
+    candidate.chars().all(|c| {
+        c.is_ascii_uppercase()
+            || c.is_ascii_digit()
+            || c == '+'
+            || c == '-'
+            || c == '*'
+            || c == '_'
+            || c == '?'
+    })
+}
 /// Parse "key = value" pairs from a block, handling multiline values.
 /// A new key starts when a line matches "IDENTIFIER = ...".
 fn parse_dico_fields(
@@ -421,6 +438,7 @@ fn parse_dico_fields(
                 errors.push(DicoParseError::UnknownField { field: key, pos });
             }
         },
+        validate_dico_key,
     );
 
     fields
