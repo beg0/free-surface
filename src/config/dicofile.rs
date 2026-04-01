@@ -431,11 +431,15 @@ fn parse_dico_fields(
     parse_fields(
         block,
         block_pos,
-        |key: String, value: String, pos: TextLoc| {
-            if known_keys.contains(&key.as_str()) {
-                fields.insert(key, ValueParseInfo { val: value, pos });
+        |key: &str, value: String, pos: TextLoc| {
+            let key_upper = key.to_uppercase();
+            if known_keys.contains(&key_upper.as_str()) {
+                fields.insert(key_upper, ValueParseInfo { val: value, pos });
             } else {
-                errors.push(DicoParseError::UnknownField { field: key, pos });
+                errors.push(DicoParseError::UnknownField {
+                    field: key.to_string(),
+                    pos,
+                });
             }
         },
         validate_dico_key,

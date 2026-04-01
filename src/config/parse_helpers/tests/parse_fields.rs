@@ -245,7 +245,7 @@ fn test_initial_pos_line_offset_applied() {
         "KEY1 = v1\nKEY2 = v2",
         &initial_pos,
         |k, v, loc| {
-            fields.push((k, v, loc));
+            fields.push((k.to_string(), v, loc));
         },
         key_is_uppercase_and_digit,
     );

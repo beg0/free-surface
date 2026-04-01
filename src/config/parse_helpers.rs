@@ -53,13 +53,13 @@ fn toggle_single_quote(v: &str) -> bool {
 
 /// Parse "key = value" pairs from a block, handling multiline values.
 /// A new key starts when a line matches "IDENTIFIER = ...".
-pub fn parse_fields<T: FnMut(String, String, TextLoc)>(
+pub fn parse_fields<T: FnMut(&str, String, TextLoc)>(
     input: &str,
     initial_pos: &TextLoc,
     mut new_field: T,
     key_validation_fct: fn(&str) -> bool,
 ) {
-    let mut current_key: Option<String> = None;
+    let mut current_key: Option<&str> = None;
     let mut current_key_line: usize = initial_pos.line();
     let mut current_value = String::new();
     let mut in_quote = false;
@@ -79,7 +79,7 @@ pub fn parse_fields<T: FnMut(String, String, TextLoc)>(
             // Check if this line starts a new key: "KEYWORD = ..."
             // A key is all-uppercase (and underscores/digits), followed by " = "
             if let Some(eq_pos) = find_key_assignment(trimmed, key_validation_fct) {
-                let candidate_key = trimmed[..eq_pos].trim().to_uppercase();
+                let candidate_key = trimmed[..eq_pos].trim();
 
                 // Save the previous key
                 if let Some(key) = current_key.take() {
