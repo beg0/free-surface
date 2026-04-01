@@ -28,7 +28,10 @@ pub enum ConfigValue {
 pub fn parse_value(raw_value: &str, kind: &DicoType, nargs: usize) -> Result<ConfigValue, String> {
     let raw_value_list: Vec<&str> = parse_list(raw_value, kind, nargs);
 
-    if nargs == 1 {
+    // Be very permissive here
+    // consider it's a scalar if and only dico says so (indeed `nargs` came from the dico)
+    // and the value to parse too
+    if nargs == 1 && raw_value_list.len() == 1 {
         parse_single_value(raw_value, kind)
     } else {
         parse_collection_values(raw_value_list, kind)
