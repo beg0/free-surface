@@ -1,3 +1,4 @@
+use super::super::parse_helpers::DamoclesError;
 use super::dicofile::parse_dico;
 use super::dicofile::Dico;
 use super::*;
@@ -386,13 +387,27 @@ fn test_invalid_boolean() {
 }
 
 #[test]
+fn test_missing_equals_sign() {
+    let mut errors = parse_err("my age 25");
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<DamoclesError>());
+    let parse_error: Box<DamoclesError> = err0.downcast().expect("not a DamoclesError");
+
+    assert!(matches!(
+        *parse_error,
+        DamoclesError::MissingEndValue { .. }
+    ));
+}
+
+#[test]
 fn test_multiple_errors_collected() {
     let input = indoc::indoc! {"
         my cat = fluffy
         my age = olderthandirt
+        missing equals
     "};
     let errors = parse_err(input);
-    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.len(), 3);
 }
 
 #[test]

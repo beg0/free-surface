@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use super::configvalue;
 use super::configvalue::ConfigValue;
 use super::dicofile;
+use super::parse_helpers::{DamoclesParser, KeywordParseInfo, TokenInfo};
 use super::textloc::{TextLoc, UNKNOWN_FILE};
 
 #[derive(Debug, thiserror::Error)]
@@ -35,8 +36,6 @@ pub enum ParseError {
         got_count: usize,
         expected_count: usize,
     },
-    #[error("{pos}: Syntax error: {reason}")]
-    SyntaxError { pos: TextLoc, reason: String },
     #[error(
         "{pos}: Value out of bound for key {key}: value should be between {min} and {max}, got '{value}'"
     )]
@@ -51,7 +50,7 @@ pub enum ParseError {
     BadChoice {
         pos: TextLoc,
         key: String,
-        value: ConfigValue,
+        value: String,
         #[source]
         reason: dicofile::ChoiceValidationError,
     },
@@ -64,6 +63,13 @@ pub struct Parser<'dico> {
     /// Map of normalized (uppercase) key -> expected type
     dico: &'dico dicofile::Dico,
     keywords: HashMap<&'dico String, &'dico dicofile::DicoKeyword>,
+}
+
+struct ParserInternal<'dico> {
+    keywords: &'dico HashMap<&'dico String, &'dico dicofile::DicoKeyword>,
+    top_pos: TextLoc,
+    result: HashMap<String, ConfigValue>,
+    errors: VecErrorPtr,
 }
 
 impl<'dico> Parser<'dico> {
@@ -111,97 +117,19 @@ impl<'dico> Parser<'dico> {
         input: &str,
         filename: &str,
     ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
-        let mut result = HashMap::new();
-        let mut errors: VecErrorPtr = Vec::new();
+        // trash previous results
+        let mut internal = ParserInternal {
+            keywords: &self.keywords,
+            result: HashMap::new(),
+            errors: Vec::new(),
+            top_pos: TextLoc::from((filename, 1)),
+        };
+        internal.parse_fields(input);
 
-        for (line_num, line) in input.lines().enumerate() {
-            let line_num = line_num + 1;
-            let pos = TextLoc::from((filename, line_num));
-
-            // Strip inline comments and trim
-            let line = strip_comment(line).trim();
-
-            if line.is_empty() {
-                continue;
-            }
-
-            // Split on first '=' or ':'
-            let Some(eq_pos) = line.find(['=', ':']) else {
-                errors.push(Box::new(ParseError::SyntaxError {
-                    pos,
-                    reason: "Missing assignment operator ('=' or ':') ".into(),
-                }));
-                continue;
-            };
-            let raw_key = String::from(line[..eq_pos].trim());
-            let raw_value = line[eq_pos + 1..].trim();
-
-            let Some(keyword) = self.keywords.get(&raw_key.to_uppercase()) else {
-                errors.push(Box::new(ParseError::UnknownKey { pos, key: raw_key }));
-                continue;
-            };
-
-            let nargs: usize = keyword.nargs.try_into().unwrap_or(1);
-
-            let parse_result = configvalue::parse_value(raw_value, &keyword.type_, nargs);
-
-            let Ok(value) = parse_result else {
-                errors.push(Box::new(ParseError::InvalidValue {
-                    pos,
-                    key: raw_key,
-                    reason: parse_result.err().unwrap(),
-                }));
-                continue;
-            };
-
-            if (nargs != 0) && (value.len() > nargs) {
-                errors.push(Box::new(ParseError::TooMuchValues {
-                    pos,
-                    key: raw_key,
-                    got_count: value.len(),
-                    expected_count: nargs,
-                }));
-                continue;
-            }
-
-            if let Some(boundaries) = keyword.boundaries {
-                let failures = get_out_of_bounds(&value, boundaries);
-                let nb_of_failures = failures.len();
-                for _failed_index in failures {
-                    errors.push(Box::new(ParseError::OutOfBound {
-                        pos: pos.clone(),
-                        key: raw_key.clone(),
-                        value: String::from(raw_value),
-                        min: boundaries.0,
-                        max: boundaries.1,
-                    }));
-                }
-                if nb_of_failures > 0 {
-                    continue;
-                }
-            };
-
-            let normalized_value = match keyword.normalize_choice(&value) {
-                Ok(new_value) => new_value,
-                Err(failures) => {
-                    for (_failed_index, reason) in failures {
-                        errors.push(Box::new(ParseError::BadChoice {
-                            key: raw_key.clone(),
-                            pos: pos.clone(),
-                            value: value.clone(),
-                            reason,
-                        }));
-                    }
-                    continue;
-                }
-            };
-            result.insert(keyword.name().clone(), normalized_value);
-        }
-
-        if errors.is_empty() {
-            Ok(result)
+        if internal.errors.is_empty() {
+            Ok(internal.result)
         } else {
-            Err(errors)
+            Err(internal.errors)
         }
     }
 
@@ -214,6 +142,7 @@ impl<'dico> Parser<'dico> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn config_from(&self, input: &str) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         let mut config = self.parse(input)?;
 
@@ -222,31 +151,92 @@ impl<'dico> Parser<'dico> {
     }
 }
 
-fn strip_comment(line: &str) -> &str {
-    let mut in_double_quotes = false;
-    let mut in_single_quotes = false;
-    let mut chars = line.char_indices().peekable();
+impl<'dico> DamoclesParser for ParserInternal<'dico> {
+    fn error(&mut self, e: ErrorPtr) {
+        self.errors.push(e);
+    }
 
-    while let Some((i, c)) = chars.next() {
-        match c {
-            '"' if !in_single_quotes => in_double_quotes = !in_double_quotes,
-            '\'' if !in_double_quotes => {
-                // Handle escaped single quote '' - peek at next char
-                if in_single_quotes {
-                    if chars.peek().map(|(_, c)| *c) == Some('\'') {
-                        chars.next(); // consume the second ', it's an escape
-                    } else {
-                        in_single_quotes = false;
-                    }
-                } else {
-                    in_single_quotes = true;
+    fn cmd(&mut self, _cmd: &TokenInfo) {
+        //TODO
+    }
+
+    fn loc(&self, pos: (usize, usize)) -> TextLoc {
+        self.top_pos.clone_with_line_col(pos.0, pos.1)
+    }
+
+    fn new_field(&mut self, mut kpi: KeywordParseInfo) {
+        let Some(keyword) = self.keywords.get(&kpi.keyname().to_uppercase()) else {
+            self.error(Box::new(ParseError::UnknownKey {
+                pos: kpi.key.start_pos.clone(),
+                key: kpi.key.token.clone(),
+            }));
+            return;
+        };
+
+        let nargs: usize = keyword.nargs.try_into().unwrap_or(1);
+        kpi.fix_list(&keyword.type_, nargs);
+        let value_parse_infos = &mut kpi.values;
+
+        let parse_result = configvalue::parse_value_2::<ErrorPtr, _>(
+            value_parse_infos,
+            &keyword.type_,
+            nargs,
+            |entry, reason| {
+                Box::new(ParseError::InvalidValue {
+                    pos: entry.start_pos.clone(),
+                    key: kpi.key.token.clone(),
+                    reason,
+                })
+            },
+        );
+
+        let value = match parse_result {
+            Ok(v) => v,
+            Err(errs) => {
+                for e in errs {
+                    self.error(e);
+                }
+                return;
+            }
+        };
+
+        if let Some(boundaries) = keyword.boundaries {
+            let failures = get_out_of_bounds(&value, boundaries);
+            let nb_of_failures = failures.len();
+            for failed_index in failures {
+                if let Some(failed_value) = value_parse_infos.get(failed_index) {
+                    self.error(Box::new(ParseError::OutOfBound {
+                        pos: failed_value.start_pos.clone(),
+                        key: kpi.key.token.clone(),
+                        value: failed_value.token.clone(),
+                        min: boundaries.0,
+                        max: boundaries.1,
+                    }));
                 }
             }
-            '/' | '#' if !in_double_quotes && !in_single_quotes => return &line[..i],
-            _ => {}
+            if nb_of_failures > 0 {
+                return;
+            }
         }
+
+        let normalized_value: ConfigValue = match keyword.normalize_choice(&value) {
+            Ok(new_value) => new_value,
+            Err(failures) => {
+                for (failed_index, reason) in failures {
+                    if let Some(failed_value) = value_parse_infos.get(failed_index) {
+                        self.error(Box::new(ParseError::BadChoice {
+                            key: kpi.key.token.clone(),
+                            pos: failed_value.start_pos.clone(),
+                            value: failed_value.token.clone(),
+                            reason,
+                        }));
+                    }
+                }
+                return;
+            }
+        };
+        self.result.insert(keyword.name().clone(), normalized_value);
     }
-    line
 }
 
 /// Check that values are in the min/max interval

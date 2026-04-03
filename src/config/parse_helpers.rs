@@ -74,7 +74,7 @@ pub fn parse_fields<T: FnMut(&str, String, TextLoc)>(
         let trimmed = if in_quote {
             line.trim_end()
         } else {
-            line.trim()
+            strip_comment(line).trim()
         };
 
         if !in_quote {
@@ -142,4 +142,31 @@ pub fn find_key_assignment(line: &str, key_validation_fct: fn(&str) -> bool) -> 
     } else {
         None
     }
+}
+
+fn strip_comment(line: &str) -> &str {
+    let mut in_double_quotes = false;
+    let mut in_single_quotes = false;
+    let mut chars = line.char_indices().peekable();
+
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' if !in_single_quotes => in_double_quotes = !in_double_quotes,
+            '\'' if !in_double_quotes => {
+                // Handle escaped single quote '' - peek at next char
+                if in_single_quotes {
+                    if chars.peek().map(|(_, c)| *c) == Some('\'') {
+                        chars.next(); // consume the second ', it's an escape
+                    } else {
+                        in_single_quotes = false;
+                    }
+                } else {
+                    in_single_quotes = true;
+                }
+            }
+            '/' | '#' if !in_double_quotes && !in_single_quotes => return &line[..i],
+            _ => {}
+        }
+    }
+    line
 }
