@@ -1,6 +1,7 @@
 //! # Telemac ".cas" file - use case configuration file
 //!
-//! This module allows to parse telemac ".cas" file
+//! This module allows to parse telemac ".cas" file.
+//! These files are also known as steering files.
 //!
 
 use std::collections::HashMap;
