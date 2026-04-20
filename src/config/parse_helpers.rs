@@ -3,6 +3,8 @@
 //! Helper functions to parse config files
 use super::textloc::TextLoc;
 
+mod locatedchars;
+
 #[cfg(test)]
 mod tests {
     mod find_key_assignment;
