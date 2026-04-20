@@ -3,7 +3,11 @@ name = "free-surface"
 version = "0.0.1"
 edition = "2024"
 
+[[bin]]
+name = "check-config"
+
 [dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
 thiserror = "2.0.18"
 
 [dev-dependencies]
