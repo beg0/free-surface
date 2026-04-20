@@ -241,6 +241,8 @@ fn strip_comment(line: &str) -> &str {
     line
 }
 
+/// Check that values are in the min/max interval
+/// Return indexes of failures (empty vec means all ok)
 fn check_boundaries(value: &ConfigValue, boundaries: (f64, f64)) -> bool {
     match value {
         ConfigValue::Integer(v) => {
