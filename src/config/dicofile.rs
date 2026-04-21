@@ -18,6 +18,9 @@ pub enum GuiControl {
     Path,
 }
 
+type ErrorPtr = Box<dyn std::error::Error>;
+type VecErrorPtr = Vec<ErrorPtr>;
+
 #[derive(Debug, Clone)]
 pub struct ChoiceOptionHelp {
     option: ConfigValue,
@@ -108,12 +111,12 @@ struct BlockParseInfo {
 
 pub type Dico = Vec<DicoKeyword>;
 
-pub fn parse_dico(input: &str, filename: &str) -> Result<Dico, Vec<DicoParseError>> {
+pub fn parse_dico(input: &str, filename: &str) -> Result<Dico, VecErrorPtr> {
     let file_pos = TextLoc::from((filename, 0));
 
     let blocks = split_into_blocks(input, &file_pos);
     let mut keywords: Dico = Vec::new();
-    let mut errors: Vec<DicoParseError> = Vec::new();
+    let mut errors: VecErrorPtr = Vec::new();
 
     for block in blocks {
         if block.val.trim().is_empty() {
@@ -180,7 +183,7 @@ fn split_into_blocks(input: &str, file_pos: &TextLoc) -> Vec<BlockParseInfo> {
 }
 
 /// Parse a single keyword block into key->raw_value pairs, then build a DicoKeyword.
-fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<DicoParseError>> {
+fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecErrorPtr> {
     let mut errors = Vec::new();
     let fields = parse_dico_fields(block, &mut errors, block_pos);
 
@@ -200,14 +203,14 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
         get_raw_val(key).map(|val| unquote_single(val.as_str()))
     };
 
-    let require = |key: &'static str, errors: &mut Vec<DicoParseError>| -> String {
+    let require = |key: &'static str, errors: &mut VecErrorPtr| -> String {
         match fields.get(key) {
             Some(v) => unquote_single(v.val.as_str()),
             None => {
-                errors.push(DicoParseError::MissingField {
+                errors.push(Box::new(DicoParseError::MissingField {
                     field: key,
                     pos: block_pos.clone(),
-                });
+                }));
                 String::new()
             }
         }
@@ -220,11 +223,11 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
             "REAL" | "REEL" => Some(DicoType::Real),
             "LOGICAL" | "LOGIQUE" => Some(DicoType::Logical),
             other => {
-                errors.push(DicoParseError::InvalidValue {
+                errors.push(Box::new(DicoParseError::InvalidValue {
                     field: "TYPE".into(),
                     reason: format!("unknown type '{}'", other),
                     pos: desc.pos.clone(),
-                });
+                }));
                 None
             }
         })
@@ -254,12 +257,12 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
             match parse_value(desc.val.as_str(), &type_, taille.try_into().unwrap()) {
                 Ok(option) => Some(option),
                 Err(reason) => {
-                    errors.push(DicoParseError::InvalidDefaultValue {
+                    errors.push(Box::new(DicoParseError::InvalidDefaultValue {
                         field: String::from(names.2),
                         value: desc.val.clone(),
                         reason,
                         pos: desc.pos.clone(),
-                    });
+                    }));
                     None
                 }
             }
@@ -295,12 +298,12 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
                     });
                 }
                 Err(reason) => {
-                    errors.push(DicoParseError::InvalidChoice {
+                    errors.push(Box::new(DicoParseError::InvalidChoice {
                         field: String::from(names.3),
                         option: String::from(option_text),
                         reason,
                         pos: choices_text_with_loc.1.clone(),
-                    });
+                    }));
                 }
             };
         }
@@ -328,11 +331,11 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
             "TUPLE" => Some(GuiControl::Tuple),
             "FILE_OR_FOLDER" | "LISTE IS FICHIER" => Some(GuiControl::Path),
             other => {
-                errors.push(DicoParseError::InvalidValue {
+                errors.push(Box::new(DicoParseError::InvalidValue {
                     field: "APPARENCE".into(),
                     reason: format!("unknown apparence '{}'", other),
                     pos: desc.pos.clone(),
-                });
+                }));
                 None
             }
         });
@@ -355,9 +358,9 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, Vec<Dico
         .map_or(0, |desc| desc.choices_help.len());
 
     if choices_cnt_fr != choices_cnt_en {
-        errors.push(DicoParseError::InconsistentChoiceOption {
+        errors.push(Box::new(DicoParseError::InconsistentChoiceOption {
             pos: block_pos.clone(),
-        });
+        }));
     }
 
     if !errors.is_empty() {
@@ -400,7 +403,7 @@ fn validate_choice_key(candidate: &str) -> bool {
 /// A new key starts when a line matches "IDENTIFIER = ...".
 fn parse_dico_fields(
     block: &str,
-    errors: &mut Vec<DicoParseError>,
+    errors: &mut VecErrorPtr,
     block_pos: &TextLoc,
 ) -> HashMap<String, ValueParseInfo> {
     let mut fields: HashMap<String, ValueParseInfo> = HashMap::new();
@@ -436,10 +439,10 @@ fn parse_dico_fields(
             if known_keys.contains(&key_upper.as_str()) {
                 fields.insert(key_upper, ValueParseInfo { val: value, pos });
             } else {
-                errors.push(DicoParseError::UnknownField {
+                errors.push(Box::new(DicoParseError::UnknownField {
                     field: key.to_string(),
                     pos,
-                });
+                }));
             }
         },
         validate_dico_key,
@@ -451,36 +454,36 @@ fn parse_dico_fields(
 fn parse_u32_field(
     name: &'static str,
     description: Option<&ValueParseInfo>,
-    errors: &mut Vec<DicoParseError>,
+    errors: &mut VecErrorPtr,
     block_pos: &TextLoc,
 ) -> u32 {
     match description {
         Some(desc) => desc.val.trim().parse::<u32>().unwrap_or_else(|_| {
-            errors.push(DicoParseError::InvalidValue {
+            errors.push(Box::new(DicoParseError::InvalidValue {
                 field: name.into(),
                 reason: format!("'{}' is not a valid unsigned integer", desc.val),
                 pos: desc.pos.clone(),
-            });
+            }));
             0
         }),
         None => {
-            errors.push(DicoParseError::MissingField {
+            errors.push(Box::new(DicoParseError::MissingField {
                 field: name,
                 pos: block_pos.clone(),
-            });
+            }));
             0
         }
     }
 }
 
-fn parse_controle(desc: &ValueParseInfo, errors: &mut Vec<DicoParseError>) -> Option<(f64, f64)> {
+fn parse_controle(desc: &ValueParseInfo, errors: &mut VecErrorPtr) -> Option<(f64, f64)> {
     let parts: Vec<&str> = desc.val.split(';').collect();
     if parts.len() != 2 {
-        errors.push(DicoParseError::InvalidValue {
+        errors.push(Box::new(DicoParseError::InvalidValue {
             field: "CONTROLE".into(),
             reason: format!("expected 'min;max', got '{}'", desc.val),
             pos: desc.pos.clone(),
-        });
+        }));
         return None;
     }
     let min = parts[0].trim().parse::<f64>().ok()?;

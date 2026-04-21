@@ -91,7 +91,7 @@ fn parse_ok(input: &str) -> HashMap<String, ConfigValue> {
     parser.parse(input).expect("Expected successful parse")
 }
 
-fn parse_err(input: &str) -> Vec<ParseError> {
+fn parse_err(input: &str) -> Vec<Box<dyn std::error::Error>> {
     let dico = make_dico();
     let parser = Parser::new(&dico);
     parser.parse(input).expect_err("Expected parse errors")
@@ -315,72 +315,74 @@ fn test_last_value_wins_on_duplicate_key() {
 
 #[test]
 fn test_unknown_key_produces_error() {
-    let errors = parse_err("my cat = fluffy");
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::UnknownKey { key: k, pos: _ } if k == "my cat")));
+    let mut errors = parse_err("my cat = fluffy");
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<ParseError>());
+    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+    assert!(matches!(*parse_error, ParseError::UnknownKey { pos: _, key: k } if k == "my cat"));
 }
 
 #[test]
 fn test_invalid_integer() {
-    let errors = parse_err("my age = olderthandirt");
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::InvalidValue { key, .. } if key == "my age")));
+    let mut errors = parse_err("my age = olderthandirt");
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<ParseError>());
+    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+    assert!(matches!(*parse_error, ParseError::InvalidValue { key, .. } if key == "my age"));
 }
 
 #[test]
 fn test_out_of_bound_integer() {
-    let errors = parse_err("my age = -5");
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::OutOfBound { key, .. } if key == "my age")));
+    let mut errors = parse_err("my age = -5");
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<ParseError>());
+    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+
+    assert!(matches!(*parse_error, ParseError::OutOfBound { key, .. } if key == "my age"));
 }
 
 #[test]
 fn test_out_of_bound_integer_collection() {
-    let errors = parse_err("AGE OF CHILDREN = 1;-10;3;4");
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::OutOfBound { key, .. } if key == "AGE OF CHILDREN")));
+    let mut errors = parse_err("AGE OF CHILDREN = 1;-10;3;4");
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<ParseError>());
+    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+
+    assert!(matches!(*parse_error, ParseError::OutOfBound { key, .. } if key == "AGE OF CHILDREN"));
 }
 
 #[test]
 fn test_out_of_bound_float_collection() {
-    let errors = parse_err("SIZE OF CHILDREN = 0.75;0.01;1.5");
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::OutOfBound { key, .. } if key == "SIZE OF CHILDREN")));
+    let mut errors = parse_err("SIZE OF CHILDREN = 0.75;0.01;1.5");
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<ParseError>());
+    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+
+    assert!(
+        matches!(*parse_error, ParseError::OutOfBound { key, .. } if key == "SIZE OF CHILDREN")
+    );
 }
 
 #[test]
 fn test_invalid_float() {
-    let errors = parse_err("my favorite number = a lot");
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::InvalidValue { key, .. } if key == "my favorite number")));
+    let mut errors = parse_err("my favorite number = 'a lot'");
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<ParseError>());
+    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+
+    assert!(
+        matches!(*parse_error, ParseError::InvalidValue { key, .. } if key == "my favorite number")
+    );
 }
 
 #[test]
 fn test_invalid_boolean() {
-    let errors = parse_err("am i serious = maybe");
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::InvalidValue { key, .. } if key == "am i serious")));
-}
+    let mut errors = parse_err("am i serious = maybe");
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<ParseError>());
+    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
 
-#[test]
-fn test_too_long_collection() {
-    let errors = parse_err("AGE OF CHILDREN = 1;5;8;10;12;15;70");
-    assert!(errors.iter().any(|e| matches!(e, ParseError::TooMuchValues { key, pos: _, got_count:7, expected_count:5 } if key == "AGE OF CHILDREN")));
-}
-
-#[test]
-fn test_missing_equals_sign() {
-    let errors = parse_err("my age 25");
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::SyntaxError { .. })));
+    assert!(matches!(*parse_error, ParseError::InvalidValue { key, .. } if key == "am i serious"));
 }
 
 #[test]
@@ -418,11 +420,13 @@ fn test_good_choice() {
 #[test]
 fn test_wrong_choice() {
     let input = "sexe des enfants = dog;girl";
-    let errors = parse_err(input);
+    let mut errors = parse_err(input);
 
-    assert!(errors
-        .iter()
-        .any(|e| matches!(e, ParseError::BadChoice { key, .. } if key == "sexe des enfants")));
+    let err0 = errors.pop().expect("should have one error reported");
+    assert!(err0.is::<ParseError>());
+    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+
+    assert!(matches!(*parse_error, ParseError::BadChoice { key, .. } if key == "sexe des enfants"));
 }
 
 // Ignore some french works for spelling

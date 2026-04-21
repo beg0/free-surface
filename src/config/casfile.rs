@@ -6,7 +6,8 @@
 
 use std::collections::HashMap;
 
-use super::configvalue::{parse_value, ConfigValue};
+use super::configvalue;
+use super::configvalue::ConfigValue;
 use super::dicofile;
 use super::textloc::{TextLoc, UNKNOWN_FILE};
 
@@ -56,6 +57,9 @@ pub enum ParseError {
     },
 }
 
+type ErrorPtr = Box<dyn std::error::Error>;
+type VecErrorPtr = Vec<ErrorPtr>;
+
 pub struct Parser<'dico> {
     /// Map of normalized (uppercase) key -> expected type
     dico: &'dico dicofile::Dico,
@@ -81,21 +85,24 @@ impl<'dico> Parser<'dico> {
     pub fn parse_from_file(
         &self,
         filename: &String,
-    ) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
+    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         match std::fs::read_to_string(filename) {
             Ok(cascontent) => {
                 self.parse_from_content_and_filename(cascontent.as_str(), filename.as_str())
             }
-            Err(error) => Err(vec![ParseError::FileOpenFailed {
-                filename: filename.clone(),
-                error,
-            }]),
+            Err(error) => {
+                let errors: VecErrorPtr = vec![Box::new(ParseError::FileOpenFailed {
+                    filename: filename.clone(),
+                    error,
+                })];
+                Err(errors)
+            }
         }
     }
 
     /// Parse a buffer containing the input of a CAS file
     #[allow(dead_code)]
-    pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
+    pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         self.parse_from_content_and_filename(input, UNKNOWN_FILE)
     }
 
@@ -103,9 +110,9 @@ impl<'dico> Parser<'dico> {
         &self,
         input: &str,
         filename: &str,
-    ) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
+    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         let mut result = HashMap::new();
-        let mut errors = Vec::new();
+        let mut errors: VecErrorPtr = Vec::new();
 
         for (line_num, line) in input.lines().enumerate() {
             let line_num = line_num + 1;
@@ -120,53 +127,53 @@ impl<'dico> Parser<'dico> {
 
             // Split on first '=' or ':'
             let Some(eq_pos) = line.find(['=', ':']) else {
-                errors.push(ParseError::SyntaxError {
+                errors.push(Box::new(ParseError::SyntaxError {
                     pos,
                     reason: "Missing assignment operator ('=' or ':') ".into(),
-                });
+                }));
                 continue;
             };
             let raw_key = String::from(line[..eq_pos].trim());
             let raw_value = line[eq_pos + 1..].trim();
 
             let Some(keyword) = self.keywords.get(&raw_key.to_uppercase()) else {
-                errors.push(ParseError::UnknownKey { pos, key: raw_key });
+                errors.push(Box::new(ParseError::UnknownKey { pos, key: raw_key }));
                 continue;
             };
 
             let nargs: usize = keyword.nargs.try_into().unwrap_or(1);
 
-            let parse_result = parse_value(raw_value, &keyword.type_, nargs);
+            let parse_result = configvalue::parse_value(raw_value, &keyword.type_, nargs);
 
             let Ok(value) = parse_result else {
-                errors.push(ParseError::InvalidValue {
+                errors.push(Box::new(ParseError::InvalidValue {
                     pos,
                     key: raw_key,
                     reason: parse_result.err().unwrap(),
-                });
+                }));
                 continue;
             };
 
             if (nargs != 0) && (value.len() > nargs) {
-                errors.push(ParseError::TooMuchValues {
+                errors.push(Box::new(ParseError::TooMuchValues {
                     pos,
                     key: raw_key,
                     got_count: value.len(),
                     expected_count: nargs,
-                });
+                }));
                 continue;
             }
 
             if let Some(boundaries) = keyword.boundaries
                 && !check_boundaries(&value, boundaries)
             {
-                errors.push(ParseError::OutOfBound {
+                errors.push(Box::new(ParseError::OutOfBound {
                     pos,
                     key: raw_key,
                     value: String::from(raw_value),
                     min: boundaries.0,
                     max: boundaries.1,
-                });
+                }));
                 continue;
             }
 
@@ -174,12 +181,12 @@ impl<'dico> Parser<'dico> {
                 Ok(new_value) => new_value,
                 Err(reasons) => {
                     for reason in reasons {
-                        errors.push(ParseError::BadChoice {
+                        errors.push(Box::new(ParseError::BadChoice {
                             key: raw_key.clone(),
                             pos: pos.clone(),
                             value: value.clone(),
                             reason,
-                        });
+                        }));
                     }
                     continue;
                 }
@@ -203,10 +210,7 @@ impl<'dico> Parser<'dico> {
         }
     }
 
-    pub fn config_from(
-        &self,
-        input: &str,
-    ) -> Result<HashMap<String, ConfigValue>, Vec<ParseError>> {
+    pub fn config_from(&self, input: &str) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         let mut config = self.parse(input)?;
 
         self.fill_missing_fields(&mut config);
