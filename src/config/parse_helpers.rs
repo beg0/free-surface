@@ -3,7 +3,11 @@
 //! Helper functions to parse config files
 use super::textloc::TextLoc;
 
+mod damocles;
+mod keywordparseinfo;
 mod locatedchars;
+
+pub use damocles::*;
 
 #[cfg(test)]
 mod tests {

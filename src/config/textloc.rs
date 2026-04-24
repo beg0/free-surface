@@ -102,12 +102,32 @@ impl TextLoc {
         }
     }
 
+    /// Clone this TextLoc and modify the line number
+    #[allow(dead_code)]
+    pub fn clone_with_line_col(&self, line: usize, column: usize) -> TextLoc {
+        TextLoc {
+            filename: Arc::clone(&self.filename),
+            line,
+            column,
+        }
+    }
     /// Clone this TextLoc and add an offset to the line number
+    #[allow(dead_code)]
     pub fn clone_with_line_offset(&self, line_offset: usize) -> TextLoc {
         TextLoc {
             filename: Arc::clone(&self.filename),
             line: self.line + line_offset,
             column: 0,
+        }
+    }
+
+    /// Clone this TextLoc and add an offset to the line number
+    #[allow(dead_code)]
+    pub fn clone_with_line_offset_col(&self, line_offset: usize, column: usize) -> TextLoc {
+        TextLoc {
+            filename: Arc::clone(&self.filename),
+            line: self.line + line_offset,
+            column,
         }
     }
 
