@@ -1,11 +1,12 @@
 //! # Dico file parser
-//!
-//! Parse Telemac dictionary files. Dictionaries contains the list of
-//! all keywords allowed
-//! for steering files (a.k.a "cas" file) for a given program (Telemac2D,
-//! Telemac3D, Artemis, Tomawac...)
-use super::configvalue::{parse_single_value, parse_value, ConfigValue, DicoType};
-use super::parse_helpers::{find_key_assignment, parse_fields, unquote_single};
+//
+// Parse Telemac dictionary files. Dictionaries contains the list of
+// all keywords allowed
+// for steering files (a.k.a "cas" file) for a given program (Telemac2D,
+// Telemac3D, Artemis, Tomawac...)
+use super::configvalue::{parse_single_value, parse_value_2, ConfigValue, DicoType};
+use super::parse_helpers::{find_key_assignment, unquote_single};
+use super::parse_helpers::{DamoclesParser, KeywordParseInfo, TokenInfo};
 use super::textloc::TextLoc;
 use std::collections::HashMap;
 
@@ -68,10 +69,25 @@ pub enum DicoParseError {
         reason: String,
         pos: TextLoc,
     },
+    #[error(
+        "{pos}: Too much values for field '{field}': got {got_count} but expected {expected_count}"
+    )]
+    TooMuchValues {
+        pos: TextLoc,
+        field: String,
+        got_count: usize,
+        expected_count: usize,
+    },
     #[error("{pos}: Invalid default value '{value}' in field {field}: {reason}")]
     InvalidDefaultValue {
         field: String,
         value: String,
+        reason: String,
+        pos: TextLoc,
+    },
+    #[error("{pos}: Inconsistent default values")]
+    InconsistentDefaultValues {
+        field: String,
         reason: String,
         pos: TextLoc,
     },
@@ -104,10 +120,7 @@ pub enum ChoiceValidationError {
     #[error("Something wrong with value {value:?}: {reason}")]
     InternalError { value: ConfigValue, reason: String },
 }
-struct ValueParseInfo {
-    val: String,
-    pos: TextLoc,
-}
+
 struct BlockParseInfo {
     val: String,
     pos: TextLoc,
@@ -195,21 +208,98 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
 
     // Helper closures
-    let get = |key: &'static str| -> Option<&ValueParseInfo> { fields.get(key) };
-    let get_raw_val = |key: &'static str| -> Option<&String> {
-        match fields.get(key) {
-            Some(desc) => Some(&desc.val),
-            None => None,
+    // let get = |key: &'static str| -> Option<&Vec<TokenInfo>> {
+    //     let kpi = fields.get(key)?;
+    //     Some(&kpi.values)
+    // };
+
+    // Get a vector of TokenInfo of exactly `expected_count`
+    let get_n = |key: &'static str,
+                 expected_count: usize,
+                 errors: &mut VecErrorPtr|
+     -> Option<&Vec<TokenInfo>> {
+        let kpi = fields.get(key)?;
+        let parse_infos = &kpi.values;
+        if parse_infos.len() != expected_count {
+            errors.push(Box::new(DicoParseError::TooMuchValues {
+                field: key.to_string(),
+                pos: if parse_infos.len() >= 2 {
+                    parse_infos[1].start_pos.clone()
+                } else {
+                    block_pos.clone()
+                },
+                expected_count,
+                got_count: parse_infos.len(),
+            }));
+
+            // if parse_infos.len() > expected_count {
+            //     Some(&parse_infos[0..expected_count].to_vec())
+            // } else {
+            None
+            // }
+        } else {
+            Some(parse_infos)
         }
     };
 
-    let get_val = |key: &'static str| -> Option<String> {
-        get_raw_val(key).map(|val| unquote_single(val.as_str()))
+    let get_one = |key: &'static str, errors: &mut VecErrorPtr| -> Option<&TokenInfo> {
+        get_n(key, 1, errors).map(|v| &v[0])
     };
 
-    let require = |key: &'static str, errors: &mut VecErrorPtr| -> String {
-        match fields.get(key) {
-            Some(v) => unquote_single(v.val.as_str()),
+    // let get_raw_val = |key: &'static str| -> Option<Vec<&String>> {
+    //     match fields.get(key) {
+    //         Some(desc) => Some(desc.into_iter().map(|d| &d.val).collect()),
+    //         None => None,
+    //     }
+    // };
+
+    // let get_val = |key: &'static str| -> Option<Vec<String>> {
+    //     get_raw_val(key).and_then(|values| {
+    //         Some(
+    //             values
+    //                 .into_iter()
+    //                 .map(|val| unquote_single(val.as_str()))
+    //                 .collect(),
+    //         )
+    //     })
+    // };
+
+    let get_val_one = |key: &'static str, errors: &mut VecErrorPtr| -> Option<String> {
+        get_one(key, errors).map(|token_info| token_info.token.clone())
+    };
+
+    let get_val_n = |key: &'static str,
+                     expected_count: usize,
+                     errors: &mut VecErrorPtr|
+     -> Option<Vec<String>> {
+        get_n(key, expected_count, errors).map(|token_infos| {
+            token_infos
+                .iter()
+                .map(|token_info| token_info.token.clone())
+                .collect()
+        })
+    };
+
+    // let require =
+    //     |key: &'static str, errors: &mut VecErrorPtr| -> Vec<String> {
+    //         match fields.get(key) {
+    //             Some(values) => values
+    //                 .into_iter()
+    //                 .map(|vpi| unquote_single(vpi.val.as_str()))
+    //                 .collect(),
+    //             None => {
+    //                 errors.push(Box::new(DicoParseError::MissingField {
+    //                     field: key,
+    //                     pos: block_pos.clone(),
+    //                 }));
+    //                 Vec::new()
+    //             }
+    //         }
+    //     };
+
+    let require_one = |key: &'static str, errors: &mut VecErrorPtr| -> String {
+        match get_one(key, errors) {
+            Some(token_info) => token_info.token.clone(),
             None => {
                 errors.push(Box::new(DicoParseError::MissingField {
                     field: key,
@@ -220,8 +310,8 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
         }
     };
 
-    let type_ = get("TYPE")
-        .and_then(|desc| match unquote_single(desc.val.trim()).as_str() {
+    let type_ = get_one("TYPE", &mut errors)
+        .and_then(|desc| match unquote_single(desc.token.as_str()).as_str() {
             "STRING" | "CARACTERE" => Some(DicoType::String),
             "INTEGER" | "ENTIER" => Some(DicoType::Integer),
             "REAL" | "REEL" => Some(DicoType::Real),
@@ -230,21 +320,22 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
                 errors.push(Box::new(DicoParseError::InvalidValue {
                     field: "TYPE".into(),
                     reason: format!("unknown type '{}'", other),
-                    pos: desc.pos.clone(),
+                    pos: desc.start_pos.clone(),
                 }));
                 None
             }
         })
         .unwrap_or(DicoType::String);
 
-    let default_taille = ValueParseInfo {
-        val: String::from("1"),
-        pos: block_pos.clone(),
+    let default_taille = TokenInfo {
+        token: String::from("1"),
+        start_pos: block_pos.clone(),
+        end_pos: block_pos.clone(),
     };
 
     let taille = parse_u32_field(
         "TAILLE",
-        get("TAILLE").or(Some(&default_taille)),
+        get_one("TAILLE", &mut errors).or(Some(&default_taille)),
         &mut errors,
         block_pos,
     );
@@ -253,43 +344,51 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     let english_names = ("NOM1", "AIDE1", "DEFAUT1", "CHOIX1", "RUBRIQUE1");
 
     for (locale, names) in [("fr", french_names), ("en", english_names)] {
-        let name = require(names.0, &mut errors);
-        let help = get_val(names.1).unwrap_or_default();
-        let default_val_str = get(names.2);
+        let name = require_one(names.0, &mut errors);
+        let help = get_val_one(names.1, &mut errors).unwrap_or_default();
+        let kpi_defaults = fields.get(names.2);
+        let nargs = taille.try_into().unwrap();
 
-        let default_val = default_val_str.and_then(|desc| {
-            match parse_value(desc.val.as_str(), &type_, taille.try_into().unwrap()) {
-                Ok(option) => Some(option),
-                Err(reason) => {
-                    errors.push(Box::new(DicoParseError::InvalidDefaultValue {
-                        field: String::from(names.2),
-                        value: desc.val.clone(),
-                        reason,
-                        pos: desc.pos.clone(),
-                    }));
+        let default_val: Option<ConfigValue> = kpi_defaults.and_then(|kpi| {
+            let values = kpi.fixed_list_values(&type_, nargs);
+            match parse_value_2::<ErrorPtr, _>(&values, &type_, nargs, |entry, reason| {
+                Box::new(DicoParseError::InvalidDefaultValue {
+                    field: String::from(names.2),
+                    value: entry.token.clone(),
+                    reason,
+                    pos: entry.start_pos.clone(),
+                })
+            }) {
+                Ok(res) => Some(res),
+                Err(errs) => {
+                    errors.extend(errs);
                     None
                 }
             }
         });
 
-        let choices_text_with_loc = get(names.3)
-            .map(|desc| (parse_semicolon_list(&desc.val, true), desc.pos.clone()))
-            .unwrap_or((Vec::<String>::new(), TextLoc::default()));
+        let classification: [String; 3] = get_val_n(names.4, 3, &mut errors)
+            .map(|values| [values[0].clone(), values[1].clone(), values[2].clone()])
+            .unwrap_or(<[String; 3]>::default());
 
-        let classification = get_raw_val(names.4).map(parse_rubrique).unwrap_or_default();
+        let choices_text_with_loc = fields
+            .get(names.3)
+            .map(|kpi| kpi.fixed_list_values(&type_, nargs))
+            .unwrap_or_default();
 
-        let choices_text = &choices_text_with_loc.0;
-        let mut choices_help: Vec<ChoiceOptionHelp> = Vec::with_capacity(choices_text.len());
-        let mut choices_values: Vec<ConfigValue> = Vec::with_capacity(choices_text.len());
+        let mut choices_help: Vec<ChoiceOptionHelp> =
+            Vec::with_capacity(choices_text_with_loc.len());
+        let mut choices_values: Vec<ConfigValue> = Vec::with_capacity(choices_text_with_loc.len());
 
-        for entry in choices_text {
+        for entry in choices_text_with_loc {
             let option_text: &str;
             let help_text: String;
-            if let Some(eq_pos) = find_key_assignment(entry.as_str(), validate_choice_key) {
-                option_text = entry.as_str()[..eq_pos].trim();
-                help_text = String::from(entry.as_str()[eq_pos..].trim());
+            let val = entry.token.as_str();
+            if let Some(eq_pos) = find_key_assignment(val, validate_choice_key) {
+                option_text = val[..eq_pos].trim();
+                help_text = String::from(val[eq_pos..].trim());
             } else {
-                option_text = entry.as_str();
+                option_text = val;
                 help_text = String::new();
             };
 
@@ -306,7 +405,7 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
                         field: String::from(names.3),
                         option: String::from(option_text),
                         reason,
-                        pos: choices_text_with_loc.1.clone(),
+                        pos: entry.start_pos.clone(),
                     }));
                 }
             };
@@ -325,10 +424,10 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
         choices_per_local.insert(String::from(locale), choices_values);
     }
 
-    // let mnemo = require("MNEMO", &mut errors);
+    // let mnemo = require_one("MNEMO", &mut errors);
 
     let apparence =
-        get("APPARENCE").and_then(|desc| match unquote_single(desc.val.trim()).as_str() {
+        get_one("APPARENCE", &mut errors).and_then(|token_info| match token_info.token.as_str() {
             "LIST" | "LISTE IS EDITABLE" => Some(GuiControl::List),
             "DYNLIST" => Some(GuiControl::DynList),
             "DYNLIST2" => Some(GuiControl::MultipleDynList),
@@ -338,19 +437,31 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
                 errors.push(Box::new(DicoParseError::InvalidValue {
                     field: "APPARENCE".into(),
                     reason: format!("unknown apparence '{}'", other),
-                    pos: desc.pos.clone(),
+                    pos: token_info.start_pos.clone(),
                 }));
                 None
             }
         });
 
-    // let index = parse_u32_field("INDEX", get("INDEX"), &mut errors, block_pos);
-    let submit = get_val("SUBMIT")
+    // let index = parse_u32_field(
+    //     "INDEX",
+    //     get_one("INDEX", &mut errors),
+    //     &mut errors,
+    //     block_pos,
+    // );
+
+    let submit = get_val_one("SUBMIT", &mut errors)
         .map(|s| parse_semicolon_list(&s, false))
         .unwrap_or_default();
-    let niveau = parse_u32_field("NIVEAU", get("NIVEAU"), &mut errors, block_pos);
+    let niveau = parse_u32_field(
+        "NIVEAU",
+        get_one("NIVEAU", &mut errors),
+        &mut errors,
+        block_pos,
+    );
 
-    let controle = get("CONTROLE").and_then(|desc| parse_controle(desc, &mut errors));
+    let controle = get_n("CONTROLE", 2, &mut errors)
+        .and_then(|infos| parse_controle(&infos[0], &infos[1], &mut errors));
 
     // FIXME: we check here that both english & french "CHOIX" expose
     // the same options. We need to make this code more generic to handle other langages
@@ -374,22 +485,16 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     Ok(DicoKeyword {
         text_desc,
         type_,
-        //index,
+        // index,
         nargs: taille,
         submit,
         // mnemo,
         boundaries: controle,
         selection_control: apparence,
-        compose: get_val("COMPOSE"),
-        comport: get_val("COMPORT"),
+        compose: get_val_one("COMPOSE", &mut errors),
+        comport: get_val_one("COMPORT", &mut errors),
         level: niveau,
     })
-}
-
-fn validate_dico_key(candidate: &str) -> bool {
-    candidate
-        .chars()
-        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
 fn validate_choice_key(candidate: &str) -> bool {
@@ -403,70 +508,93 @@ fn validate_choice_key(candidate: &str) -> bool {
             || c == '?'
     })
 }
+
+struct DicoFieldParser<'a> {
+    fields: HashMap<String, KeywordParseInfo>,
+    block_pos: &'a TextLoc,
+    errors: &'a mut VecErrorPtr,
+    known_keys: [&'static str; 20],
+}
+
 /// Parse "key = value" pairs from a block, handling multiline values.
 /// A new key starts when a line matches "IDENTIFIER = ...".
 fn parse_dico_fields(
     block: &str,
     errors: &mut VecErrorPtr,
     block_pos: &TextLoc,
-) -> HashMap<String, ValueParseInfo> {
-    let mut fields: HashMap<String, ValueParseInfo> = HashMap::new();
-
-    let known_keys = [
-        "NOM1",
-        "NOM",
-        "TYPE",
-        "INDEX",
-        "TAILLE",
-        "SUBMIT",
-        "DEFAUT1",
-        "DEFAUT",
-        "MNEMO",
-        "CONTROLE",
-        "CHOIX1",
-        "CHOIX",
-        "APPARENCE",
-        "RUBRIQUE1",
-        "RUBRIQUE",
-        "COMPOSE",
-        "COMPORT",
-        "NIVEAU",
-        "AIDE1",
-        "AIDE",
-    ];
-
-    parse_fields(
-        block,
+) -> HashMap<String, KeywordParseInfo> {
+    let mut parser = DicoFieldParser {
+        fields: HashMap::new(),
         block_pos,
-        |key: &str, value: String, pos: TextLoc| {
-            let key_upper = key.to_uppercase();
-            if known_keys.contains(&key_upper.as_str()) {
-                fields.insert(key_upper, ValueParseInfo { val: value, pos });
-            } else {
-                errors.push(Box::new(DicoParseError::UnknownField {
-                    field: key.to_string(),
-                    pos,
-                }));
-            }
-        },
-        validate_dico_key,
-    );
+        errors,
+        known_keys: [
+            "NOM1",
+            "NOM",
+            "TYPE",
+            "INDEX",
+            "TAILLE",
+            "SUBMIT",
+            "DEFAUT1",
+            "DEFAUT",
+            "MNEMO",
+            "CONTROLE",
+            "CHOIX1",
+            "CHOIX",
+            "APPARENCE",
+            "RUBRIQUE1",
+            "RUBRIQUE",
+            "COMPOSE",
+            "COMPORT",
+            "NIVEAU",
+            "AIDE1",
+            "AIDE",
+        ],
+    };
 
-    fields
+    parser.parse_fields(block);
+
+    parser.fields
+}
+
+impl<'a> DamoclesParser for DicoFieldParser<'a> {
+    fn error(&mut self, e: ErrorPtr) {
+        self.errors.push(e);
+    }
+
+    fn cmd(&mut self, _cmd: &TokenInfo) {
+        //TODO
+    }
+
+    fn loc(&self, pos: (usize, usize)) -> TextLoc {
+        // pos is 1-based, but here we want an offset, so something which is 0-based
+        self.block_pos.clone_with_line_offset_col(pos.0 - 1, pos.1)
+    }
+
+    fn new_field(&mut self, kpi: KeywordParseInfo) {
+        let key_upper = kpi.keyname().to_uppercase();
+        if self.known_keys.contains(&key_upper.as_str()) {
+            self.fields.insert(key_upper, kpi);
+        } else {
+            self.error(Box::new(DicoParseError::UnknownField {
+                field: kpi.key.token.to_string(),
+                pos: kpi.key.start_pos.clone(),
+            }));
+        }
+    }
 }
 
 fn parse_u32_field(
     name: &'static str,
-    description: Option<&ValueParseInfo>,
+    description: Option<&TokenInfo>,
     errors: &mut VecErrorPtr,
     block_pos: &TextLoc,
 ) -> u32 {
     match description {
-        Some(desc) => desc.val.trim().parse::<u32>().unwrap_or_else(|_| {
+        Some(desc) => desc.token.trim().parse::<u32>().unwrap_or_else(|_| {
             errors.push(Box::new(DicoParseError::InvalidValue {
                 field: name.into(),
-                reason: format!("'{}' is not a valid unsigned integer", desc.val),
-                pos: desc.pos.clone(),
+                reason: format!("'{}' is not a valid unsigned integer", desc.token),
+                pos: desc.start_pos.clone(),
             }));
             0
         }),
@@ -480,19 +608,33 @@ fn parse_u32_field(
     }
 }
 
-fn parse_controle(desc: &ValueParseInfo, errors: &mut VecErrorPtr) -> Option<(f64, f64)> {
-    let parts: Vec<&str> = desc.val.split(';').collect();
-    if parts.len() != 2 {
-        errors.push(Box::new(DicoParseError::InvalidValue {
-            field: "CONTROLE".into(),
-            reason: format!("expected 'min;max', got '{}'", desc.val),
-            pos: desc.pos.clone(),
-        }));
-        return None;
+fn parse_controle(
+    min: &TokenInfo,
+    max: &TokenInfo,
+    errors: &mut VecErrorPtr,
+) -> Option<(f64, f64)> {
+    match (
+        min.token.trim().parse::<f64>(),
+        max.token.trim().parse::<f64>(),
+    ) {
+        (Ok(min_float), Ok(max_float)) => Some((min_float, max_float)),
+        (Err(min_err), _) => {
+            errors.push(Box::new(DicoParseError::InvalidValue {
+                field: "CONTROL".to_owned(),
+                reason: format!("Invalid min value '{}': {}", min.token, min_err),
+                pos: min.start_pos.clone(),
+            }));
+            None
+        }
+        (_, Err(max_err)) => {
+            errors.push(Box::new(DicoParseError::InvalidValue {
+                field: "CONTROL".to_owned(),
+                reason: format!("Invalid max value '{}': {}", max.token, max_err),
+                pos: max.start_pos.clone(),
+            }));
+            None
+        }
     }
-    let min = parts[0].trim().parse::<f64>().ok()?;
-    let max = parts[1].trim().parse::<f64>().ok()?;
-    Some((min, max))
 }
 
 /// Parse a semicolon-separated list of possibly single-quoted strings.
@@ -518,16 +660,6 @@ fn parse_semicolon_list(raw: &String, unquote_entries: bool) -> Vec<String> {
         .map(single_entry_unquote_fct)
         .filter(|s| !s.is_empty())
         .collect()
-}
-
-/// Parse RUBRIQUE into exactly 3 levels, padding with empty strings.
-fn parse_rubrique(raw: &String) -> [String; 3] {
-    let items = parse_semicolon_list(raw, true);
-    [
-        items.first().cloned().unwrap_or_default(),
-        items.get(1).cloned().unwrap_or_default(),
-        items.get(2).cloned().unwrap_or_default(),
-    ]
 }
 
 impl DicoKeyword {
@@ -626,40 +758,43 @@ impl DicoKeyword {
         value: &ConfigValue,
     ) -> Result<ConfigValue, ChoiceValidationError> {
         let mut option_pos: Option<usize> = None;
-        let mut option_locale: Option<&String> = None;
-        for (locale, desc) in &self.text_desc {
+        for desc in self.text_desc.values() {
+            let upper_value: ConfigValue;
+            let normalized_value: &ConfigValue;
+            if let ConfigValue::String(s) = value {
+                upper_value = ConfigValue::String(s.to_uppercase().trim().to_string());
+                normalized_value = &upper_value;
+            } else {
+                normalized_value = value;
+            }
             let research = desc
                 .choices_help
                 .iter()
-                .position(|choice_help| choice_help.option == *value);
+                .position(|choice_help| choice_help.option == *normalized_value);
 
             if let Some(pos) = research {
                 option_pos = Some(pos);
-                option_locale = Some(locale);
                 break;
             }
         }
+
+        // Return the english version of the choice
+        // Note that, even if the original choice is in english,
+        // return the one in self.text_desc, so that we are sure it is normalized
+        // this is especially true for string choices (which can be trimmed and/or lowercase)
         match option_pos {
             Some(pos) => {
-                if option_locale
-                    .expect("'option_pos' not null but 'option_locale' not defined")
-                    .as_str()
-                    == "en"
-                {
-                    Ok(value.clone())
-                } else {
-                    let english_desc = self
-                        .text_desc
-                        .get("en")
-                        .expect("No 'en' text description in keyword");
+                let english_desc = self
+                    .text_desc
+                    .get("en")
+                    .expect("No 'en' text description in keyword");
 
-                    let english_option_help = english_desc
-                        .choices_help
-                        .get(pos)
-                        .expect("Length of 'en' and other language does not match");
+                let english_option_help = english_desc
+                    .choices_help
+                    .get(pos)
+                    .expect("Length of 'en' and other language does not match");
 
-                    Ok(english_option_help.option.clone())
-                }
+                Ok(english_option_help.option.clone())
             }
             None => Err(ChoiceValidationError::NotFound {
                 value: value.clone(),

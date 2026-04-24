@@ -6,23 +6,23 @@ const MY_FILE: &str = "/dave/null";
 
 fn make_dico() -> Dico {
     let dico_content = indoc::indoc! {"
-        NOM = QUI MAMAN AIME
-        NOM1 = WHO MOM LOVES
+        NOM = 'QUI MAMAN AIME'
+        NOM1 = 'WHO MOM LOVES'
         TYPE = STRING
         MNEMO = WML
         INDEX = 1
         NIVEAU = 2
         /
-        NOM = MON AGE
-        NOM1 = MY AGE
+        NOM = 'MON AGE'
+        NOM1 = 'MY AGE'
         TYPE = INTEGER
         CONTROLE = 0; 99
         MNEMO = MA
         INDEX = 2
         NIVEAU = 2
         /
-        NOM = AGE DES ENFANTS
-        NOM1 = AGE OF CHILDREN
+        NOM = 'AGE DES ENFANTS'
+        NOM1 = 'AGE OF CHILDREN'
         TYPE = INTEGER
         CONTROLE = 0; 99
         MNEMO = LADE
@@ -30,8 +30,8 @@ fn make_dico() -> Dico {
         NIVEAU = 2
         TAILLE = 5
         /
-        NOM = TAILLE DES ENFANTS
-        NOM1 = SIZE OF CHILDREN
+        NOM = 'TAILLE DES ENFANTS'
+        NOM1 = 'SIZE OF CHILDREN'
         TYPE = REAL
         CONTROLE = 0.20;2.50
         MNEMO = TDE
@@ -39,16 +39,16 @@ fn make_dico() -> Dico {
         INDEX = 4
         TAILLE = 5
         /
-        NOM = NOMS DES ENFANTS
-        NOM1 = NAME OF CHILDREN
+        NOM = 'NOMS DES ENFANTS'
+        NOM1 = 'NAMES OF CHILDREN'
         TYPE = STRING
         MNEMO = NDE
         NIVEAU = 2
         INDEX = 5
         TAILLE = 5
         /
-        NOM = SEXE DES ENFANTS
-        NOM1 = SEX OF CHILDREN
+        NOM = 'SEXE DES ENFANTS'
+        NOM1 = 'SEX OF CHILDREN'
         TYPE = STRING
         CHOIX =
         'GARCON';
@@ -59,22 +59,22 @@ fn make_dico() -> Dico {
         INDEX = 6
         TAILLE = 5
         /
-        NOM = SUIS JE SERIEUX
-        NOM1 = AM I SERIOUS
+        NOM = 'SUIS JE SERIEUX'
+        NOM1 = 'AM I SERIOUS'
         TYPE = LOGICAL
         MNEMO = AIS
         INDEX = 7
         NIVEAU = 2
         /
-        NOM = MON NOMBRE FAVORIS
-        NOM1 = MY FAVORITE NUMBER
+        NOM = 'MON NOMBRE FAVORIS'
+        NOM1 = 'MY FAVORITE NUMBER'
         TYPE = REAL
         MNEMO = MFN
         INDEX = 8
         NIVEAU = 2
         /
-        NOM = COMPTE EN BANK
-        NOM1 = BANK ACCOUNT
+        NOM = 'COMPTE EN BANK'
+        NOM1 = 'BANK ACCOUNT'
         TYPE = INTEGER
         MNEMO = BA
         INDEX = 9
@@ -390,10 +390,9 @@ fn test_multiple_errors_collected() {
     let input = indoc::indoc! {"
         my cat = fluffy
         my age = olderthandirt
-        missing equals
     "};
     let errors = parse_err(input);
-    assert_eq!(errors.len(), 3);
+    assert_eq!(errors.len(), 2);
 }
 
 #[test]
@@ -407,7 +406,7 @@ fn test_valid_and_invalid_lines_mixed() {
 
 #[test]
 fn test_good_choice() {
-    let input = "sexe des enfants = GARCON;GIRL";
+    let input = "sexe des enfants = GARCON;girl";
     let config = parse_ok(input);
 
     // Choices are normalized

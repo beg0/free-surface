@@ -36,6 +36,9 @@ fn collect_fields_without_errors(input: &str) -> Vec<KeywordParseInfo> {
     let mut tester = DamoclesTester::default();
 
     tester.parse_fields(input);
+    if !tester.errors.is_empty() {
+        dbg!(&tester.errors);
+    }
 
     assert!(tester.errors.is_empty());
 
@@ -338,8 +341,6 @@ fn test_continuation_line_before_any_key_is_ignored() {
     let input = "orphan line\nKEY = value";
     let (fields, mut errors) = collect_fields_with_errors(input);
     assert_eq!(fields.len(), 1);
-    dbg!(fields);
-    dbg!(&errors);
     assert_eq!(errors.len(), 1);
     let err0 = errors.pop().expect("should have one error reported");
     assert!(err0.is::<DamoclesError>());

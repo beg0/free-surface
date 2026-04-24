@@ -220,6 +220,7 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                             });
                             self.field_parser.error(e);
                         }
+                        find_assignment = true;
                     }
                 },
                 // List separator
