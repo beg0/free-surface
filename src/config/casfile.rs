@@ -164,18 +164,22 @@ impl<'dico> Parser<'dico> {
                 continue;
             }
 
-            if let Some(boundaries) = keyword.boundaries
-                && !check_boundaries(&value, boundaries)
-            {
-                errors.push(Box::new(ParseError::OutOfBound {
-                    pos,
-                    key: raw_key,
-                    value: String::from(raw_value),
-                    min: boundaries.0,
-                    max: boundaries.1,
-                }));
-                continue;
-            }
+            if let Some(boundaries) = keyword.boundaries {
+                let failures = get_out_of_bounds(&value, boundaries);
+                let nb_of_failures = failures.len();
+                for _failed_index in failures {
+                    errors.push(Box::new(ParseError::OutOfBound {
+                        pos: pos.clone(),
+                        key: raw_key.clone(),
+                        value: String::from(raw_value),
+                        min: boundaries.0,
+                        max: boundaries.1,
+                    }));
+                }
+                if nb_of_failures > 0 {
+                    continue;
+                }
+            };
 
             let normalized_value = match keyword.normalize_choice(&value) {
                 Ok(new_value) => new_value,
@@ -247,41 +251,50 @@ fn strip_comment(line: &str) -> &str {
 
 /// Check that values are in the min/max interval
 /// Return indexes of failures (empty vec means all ok)
-fn check_boundaries(value: &ConfigValue, boundaries: (f64, f64)) -> bool {
+fn get_out_of_bounds(value: &ConfigValue, boundaries: (f64, f64)) -> Vec<usize> {
     match value {
         ConfigValue::Integer(v) => {
             let min: i64 = boundaries.0 as i64;
             let max: i64 = boundaries.1 as i64;
-            min <= *v && *v <= max
+            if min <= *v && *v <= max {
+                Vec::new()
+            } else {
+                vec![0]
+            }
         }
         ConfigValue::Float(v) => {
             let min: f64 = boundaries.0;
             let max: f64 = boundaries.1;
-            min <= *v && *v <= max
+            if min <= *v && *v <= max {
+                Vec::new()
+            } else {
+                vec![0]
+            }
         }
         ConfigValue::IntegerCollection(values) => {
             let min: i64 = boundaries.0 as i64;
             let max: i64 = boundaries.1 as i64;
-            let mut result: bool = true;
-            for v in values {
+            let mut failures: Vec<usize> = Vec::new();
+            for (i, v) in values.iter().enumerate() {
                 if !(min <= *v && *v <= max) {
-                    result = false;
+                    failures.push(i);
                 }
             }
-            result
+            failures
         }
         ConfigValue::FloatCollection(values) => {
             let min: f64 = boundaries.0;
             let max: f64 = boundaries.1;
-            let mut result: bool = true;
-            for v in values {
+            let mut failures: Vec<usize> = Vec::new();
+            for (i, v) in values.iter().enumerate() {
                 if !(min <= *v && *v <= max) {
-                    result = false;
+                    failures.push(i);
                 }
             }
-            result
+            failures
         }
-        _ => false,
+        // All other case: failure: can't check boundaries
+        _ => vec![0],
     }
 }
 
