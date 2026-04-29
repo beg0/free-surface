@@ -183,8 +183,8 @@ impl<'dico> Parser<'dico> {
 
             let normalized_value = match keyword.normalize_choice(&value) {
                 Ok(new_value) => new_value,
-                Err(reasons) => {
-                    for reason in reasons {
+                Err(failures) => {
+                    for (_failed_index, reason) in failures {
                         errors.push(Box::new(ParseError::BadChoice {
                             key: raw_key.clone(),
                             pos: pos.clone(),

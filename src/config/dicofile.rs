@@ -715,15 +715,18 @@ impl DicoKeyword {
     pub fn normalize_choice(
         &self,
         option: &ConfigValue,
-    ) -> Result<ConfigValue, Vec<ChoiceValidationError>> {
+    ) -> Result<ConfigValue, Vec<(usize, ChoiceValidationError)>> {
         let values: Vec<ConfigValue>;
-        let mut errors: Vec<ChoiceValidationError> = Vec::new();
+        let mut errors: Vec<(usize, ChoiceValidationError)> = Vec::new();
 
         let error_mapper = |reason| {
-            vec![ChoiceValidationError::InternalError {
-                value: option.clone(),
-                reason,
-            }]
+            vec![(
+                0,
+                ChoiceValidationError::InternalError {
+                    value: option.clone(),
+                    reason,
+                },
+            )]
         };
 
         if self.has_choices() {
@@ -734,10 +737,13 @@ impl DicoKeyword {
             }
 
             let mut output_vec: Vec<ConfigValue> = Vec::with_capacity(values.len());
-            for candidate in &values {
+
+            #[allow(clippy::needless_range_loop)]
+            for index in 0..values.len() {
+                let candidate = &values[index];
                 match self.normalize_single_choice(candidate) {
                     Ok(new_value) => output_vec.push(new_value),
-                    Err(reason) => errors.push(reason),
+                    Err(reason) => errors.push((index, reason)),
                 };
             }
 
