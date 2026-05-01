@@ -57,7 +57,7 @@ where
     }
 }
 
-fn parse_single_value_2<E, ErrorMapper>(
+pub fn parse_single_value_2<E, ErrorMapper>(
     value: &TokenInfo,
     kind: &DicoType,
     error_mapper: ErrorMapper,

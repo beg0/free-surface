@@ -1,11 +1,11 @@
 //! # Dico file parser
-//
-// Parse Telemac dictionary files. Dictionaries contains the list of
-// all keywords allowed
-// for steering files (a.k.a "cas" file) for a given program (Telemac2D,
-// Telemac3D, Artemis, Tomawac...)
-use super::configvalue::{parse_single_value, parse_value_2, ConfigValue, DicoType};
-use super::parse_helpers::{find_key_assignment, unquote_single};
+//!
+//! Parse Telemac dictionary files. Dictionaries contains the list of
+//! all keywords allowed
+//! for steering files (a.k.a "cas" file) for a given program (Telemac2D,
+//! Telemac3D, Artemis, Tomawac...)
+use super::configvalue::{parse_single_value_2, parse_value_2, ConfigValue, DicoType};
+use super::parse_helpers::unquote_single;
 use super::parse_helpers::{DamoclesParser, KeywordParseInfo, TokenInfo};
 use super::textloc::TextLoc;
 use std::collections::HashMap;
@@ -381,18 +381,16 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
         let mut choices_values: Vec<ConfigValue> = Vec::with_capacity(choices_text_with_loc.len());
 
         for entry in choices_text_with_loc {
-            let option_text: &str;
-            let help_text: String;
-            let val = entry.token.as_str();
-            if let Some(eq_pos) = find_key_assignment(val, validate_choice_key) {
-                option_text = val[..eq_pos].trim();
-                help_text = String::from(val[eq_pos..].trim());
-            } else {
-                option_text = val;
-                help_text = String::new();
-            };
+            let (option_token, help_text) = parse_choice_help(entry);
 
-            match parse_single_value(option_text, &type_) {
+            match parse_single_value_2::<ErrorPtr, _>(&option_token, &type_, |entry, reason| {
+                Box::new(DicoParseError::InvalidChoice {
+                    field: String::from(names.3),
+                    option: entry.token.clone(),
+                    reason,
+                    pos: entry.start_pos.clone(),
+                })
+            }) {
                 Ok(option) => {
                     choices_values.push(option.clone());
                     choices_help.push(ChoiceOptionHelp {
@@ -400,13 +398,8 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
                         _help: help_text,
                     });
                 }
-                Err(reason) => {
-                    errors.push(Box::new(DicoParseError::InvalidChoice {
-                        field: String::from(names.3),
-                        option: String::from(option_text),
-                        reason,
-                        pos: entry.start_pos.clone(),
-                    }));
+                Err(errs) => {
+                    errors.extend(errs);
                 }
             };
         }
@@ -494,18 +487,6 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
         compose: get_val_one("COMPOSE", &mut errors),
         comport: get_val_one("COMPORT", &mut errors),
         level: niveau,
-    })
-}
-
-fn validate_choice_key(candidate: &str) -> bool {
-    candidate.chars().all(|c| {
-        c.is_ascii_uppercase()
-            || c.is_ascii_digit()
-            || c == '+'
-            || c == '-'
-            || c == '*'
-            || c == '_'
-            || c == '?'
     })
 }
 
@@ -660,6 +641,41 @@ fn parse_semicolon_list(raw: &String, unquote_entries: bool) -> Vec<String> {
         .map(single_entry_unquote_fct)
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+/// Parse one entry in the "CHOIX" (or "CHOIX1") field.
+/// It can be in the form "option" or "option=help_text"
+fn parse_choice_help(option_and_help: TokenInfo) -> (TokenInfo, String) {
+    let text = &option_and_help.token;
+    if let Some(eq_pos) = text.find([':', '=']) {
+        let non_whitespace = |c: char| !c.is_whitespace();
+        let untrimmed_value = &text[..eq_pos];
+        let first_non_whitespace = untrimmed_value.find(non_whitespace).unwrap_or(0);
+
+        // Compute new token for the name
+        // Assume it starts and end at the same line.
+        let new_value = untrimmed_value.trim().to_owned();
+        let new_start_pos = option_and_help.start_pos.clone_with_line_offset_col(
+            0,
+            option_and_help.start_pos.column() + first_non_whitespace,
+        );
+        let new_end_pos = option_and_help
+            .start_pos
+            .clone_with_line_offset_col(0, option_and_help.start_pos.column() + new_value.len());
+
+        let option_token = TokenInfo {
+            token: new_value,
+            start_pos: new_start_pos,
+            end_pos: new_end_pos,
+        };
+        //TODO: often this text is double-quoted. Need to unquote it.
+        let help_text = text[eq_pos..].trim().to_owned();
+
+        (option_token, help_text)
+    } else {
+        // No "equal" sign, it means it's only the name, without an help text
+        (option_and_help, String::new())
+    }
 }
 
 impl DicoKeyword {
