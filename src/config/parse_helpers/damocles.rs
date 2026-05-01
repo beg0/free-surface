@@ -67,6 +67,18 @@ pub enum DamoclesError {
 
     #[error("{pos}: Invalid character {char}.")]
     NonPrintableCharacter { char: char, pos: TextLoc },
+
+    #[error("{pos}: Unknown special command '{cmd}'.")]
+    UnknownCommand { cmd: String, pos: TextLoc },
+
+    #[error("{pos}: Stop command encountered '{cmd}'.")]
+    StopCommand { cmd: String, pos: TextLoc },
+}
+
+/// Return codes for handler of special command (e.g. keyword starting with '&')
+pub enum DamoclesCommandStatus {
+    Success,
+    Exit,
 }
 
 /// Line & Column position
@@ -83,6 +95,7 @@ enum TokenizerState {
 }
 
 struct DamoclesParseContext<'a, T: DamoclesParser + ?Sized> {
+    quit: bool,
     token_start_pos: LineCol,
     token_start_offset: usize,
     last_non_whitespace_pos: LineCol,
@@ -93,6 +106,7 @@ struct DamoclesParseContext<'a, T: DamoclesParser + ?Sized> {
 impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
     pub fn new(field_parser: &'a mut T) -> Self {
         Self {
+            quit: false,
             token_start_pos: (0, 0),
             token_start_offset: 0,
             last_non_whitespace_pos: (0, 0),
@@ -115,6 +129,20 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
         ret
     }
 
+    fn process_cmd(&mut self, token: TokenInfo) {
+        match self.field_parser.cmd(token) {
+            Ok(exit_status) => match exit_status {
+                DamoclesCommandStatus::Success => {}
+                DamoclesCommandStatus::Exit => {
+                    self.quit = true;
+                }
+            },
+            Err(err) => {
+                self.field_parser.error(err);
+            }
+        }
+    }
+
     pub fn parse_fields(&mut self, input: &str) {
         let mut chars = locatedchars::LocatedChars::new(input);
 
@@ -126,8 +154,13 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
         let mut tokenizer_state = TokenizerState::Outside;
         let mut expected_value_cnt: usize = 1;
         let mut find_assignment = false;
+        self.quit = false;
 
         while let Some((i, c)) = chars.next() {
+            if self.quit {
+                break;
+            }
+
             match c {
                 '"' => match tokenizer_state {
                     TokenizerState::Outside => {
@@ -303,18 +336,23 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
             }
 
             // Got a token.
-            // it can be a key or a value
+            // it can be a special command, a key or a value
             if let Some(unwrapped_token) = token {
-                if key.is_none() {
-                    key = Some(unwrapped_token);
-                } else if find_assignment {
-                    let value = unwrapped_token;
-                    values.push(value);
+                if unwrapped_token.token.starts_with('&') {
+                    self.process_cmd(unwrapped_token);
                 } else {
-                    let e = Box::new(DamoclesError::MissingAssignment {
-                        pos: unwrapped_token.start_pos.clone(),
-                    });
-                    self.field_parser.error(e);
+                    // Not a special command, it's a key or a value
+                    if key.is_none() {
+                        key = Some(unwrapped_token);
+                    } else if find_assignment {
+                        let value = unwrapped_token;
+                        values.push(value);
+                    } else {
+                        let e = Box::new(DamoclesError::MissingAssignment {
+                            pos: unwrapped_token.start_pos.clone(),
+                        });
+                        self.field_parser.error(e);
+                    }
                 }
                 token = None;
             }
@@ -367,14 +405,25 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
         }
 
         // Got a final token.
-        // it can be a key or a value
-        if token.is_some() {
-            if key.is_none() {
-                key = token.take();
+        // it can be a special command, a key or a value
+        if let Some(unwrapped_token) = token {
+            if unwrapped_token.token.starts_with('&') {
+                self.process_cmd(unwrapped_token);
             } else {
-                let value = token.take().unwrap();
-                values.push(value);
+                // Not a special command, it's a key or a value
+                if key.is_none() {
+                    key = Some(unwrapped_token);
+                } else if find_assignment {
+                    let value = unwrapped_token;
+                    values.push(value);
+                } else {
+                    let e = Box::new(DamoclesError::MissingAssignment {
+                        pos: unwrapped_token.start_pos.clone(),
+                    });
+                    self.field_parser.error(e);
+                }
             }
+            //token = None;
         }
 
         if let Some(unwrapped_key) = key {
@@ -407,7 +456,7 @@ pub trait DamoclesParser {
     fn new_field(&mut self, kpi: KeywordParseInfo);
 
     /// Handle a command (e.g three characters starting with '&')
-    fn cmd(&mut self, cmd: &TokenInfo);
+    fn cmd(&mut self, cmd: TokenInfo) -> Result<DamoclesCommandStatus, Box<dyn std::error::Error>>;
 
     /// Report a parsing error
     fn error(&mut self, e: Box<dyn std::error::Error>);

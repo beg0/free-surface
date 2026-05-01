@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use super::configvalue;
 use super::configvalue::ConfigValue;
 use super::dicofile;
-use super::parse_helpers::{DamoclesParser, KeywordParseInfo, TokenInfo};
+use super::parse_helpers::{
+    DamoclesCommandStatus, DamoclesError, DamoclesParser, KeywordParseInfo, TokenInfo,
+};
 use super::textloc::{TextLoc, UNKNOWN_FILE};
 
 #[derive(Debug, thiserror::Error)]
@@ -156,8 +158,49 @@ impl<'dico> DamoclesParser for ParserInternal<'dico> {
         self.errors.push(e);
     }
 
-    fn cmd(&mut self, _cmd: &TokenInfo) {
-        //TODO
+    fn cmd(&mut self, cmd: TokenInfo) -> Result<DamoclesCommandStatus, Box<dyn std::error::Error>> {
+        let mut exit_code = DamoclesCommandStatus::Success;
+
+        // TODO: better processing of "ETA" & "IND" command.
+        // For now, they are handled the same way
+
+        match cmd.token[1..].to_ascii_uppercase().as_str() {
+            "DYN" => {
+                //Ignored in sterring file
+            }
+            "LIS" => {
+                // Dump the dico
+                dbg!(&self.keywords);
+            }
+            "ETA" => {
+                // Dump the config file
+                dbg!(&self.result);
+            }
+            "IND" => {
+                // Dump values in config files
+                dbg!(&self.result);
+            }
+            "STO" => {
+                return Err(Box::new(DamoclesError::StopCommand {
+                    cmd: cmd.token,
+                    pos: cmd.start_pos,
+                }));
+            }
+            "FIN" => {
+                exit_code = DamoclesCommandStatus::Exit;
+            }
+            "DOC" => {
+                eprintln!("cmd DOC is deprecated");
+            }
+            _ => {
+                return Err(Box::new(DamoclesError::UnknownCommand {
+                    cmd: cmd.token,
+                    pos: cmd.start_pos,
+                }));
+            }
+        };
+
+        Ok(exit_code)
     }
 
     fn loc(&self, pos: (usize, usize)) -> TextLoc {

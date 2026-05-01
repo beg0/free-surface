@@ -6,7 +6,9 @@
 //! Telemac3D, Artemis, Tomawac...)
 use super::configvalue::{parse_single_value_2, parse_value_2, ConfigValue, DicoType};
 use super::parse_helpers::unquote_single;
-use super::parse_helpers::{DamoclesParser, KeywordParseInfo, TokenInfo};
+use super::parse_helpers::{
+    DamoclesCommandStatus, DamoclesError, DamoclesParser, KeywordParseInfo, TokenInfo,
+};
 use super::textloc::TextLoc;
 use std::collections::HashMap;
 
@@ -499,8 +501,39 @@ impl<'a> DamoclesParser for DicoFieldParser<'a> {
         self.errors.push(e);
     }
 
-    fn cmd(&mut self, _cmd: &TokenInfo) {
-        //TODO
+    fn cmd(&mut self, cmd: TokenInfo) -> Result<DamoclesCommandStatus, Box<dyn std::error::Error>> {
+        let mut exit_code = DamoclesCommandStatus::Success;
+        // TODO: better processing of "LIS", "ETA" & "IND" command.
+        // For now, they are handled the same way
+
+        match cmd.token[1..].to_ascii_uppercase().as_str() {
+            "DYN" => {
+                // Consider all dico as "dynamic",  thus ignore this command
+            }
+            "LIS" | "ETA" | "IND" => {
+                dbg!(&self.fields);
+            }
+            "STO" => {
+                return Err(Box::new(DamoclesError::StopCommand {
+                    cmd: cmd.token,
+                    pos: cmd.start_pos,
+                }));
+            }
+            "FIN" => {
+                exit_code = DamoclesCommandStatus::Exit;
+            }
+            "DOC" => {
+                eprintln!("cmd DOC is deprecated");
+            }
+            _ => {
+                return Err(Box::new(DamoclesError::UnknownCommand {
+                    cmd: cmd.token,
+                    pos: cmd.start_pos,
+                }));
+            }
+        };
+
+        Ok(exit_code)
     }
 
     fn loc(&self, pos: (usize, usize)) -> TextLoc {

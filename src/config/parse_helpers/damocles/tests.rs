@@ -1,5 +1,7 @@
 //! # Unit tests for config::parse_helpers::parse_fields
-use super::super::{DamoclesError, DamoclesParser, KeywordParseInfo, TokenInfo};
+use super::super::{
+    DamoclesCommandStatus, DamoclesError, DamoclesParser, KeywordParseInfo, TokenInfo,
+};
 use crate::config::textloc::TextLoc;
 
 //-------------------
@@ -11,6 +13,7 @@ use crate::config::textloc::TextLoc;
 #[derive(Debug, Default)]
 struct DamoclesTester {
     fields: Vec<KeywordParseInfo>,
+    commands: Vec<TokenInfo>,
     errors: Vec<Box<dyn std::error::Error>>,
 }
 
@@ -20,7 +23,10 @@ impl DamoclesParser for DamoclesTester {
         self.fields.push(kpi);
     }
 
-    fn cmd(&mut self, _cmd: &TokenInfo) {}
+    fn cmd(&mut self, cmd: TokenInfo) -> Result<DamoclesCommandStatus, Box<dyn std::error::Error>> {
+        self.commands.push(cmd);
+        Ok(DamoclesCommandStatus::Success) // Todo test error cases
+    }
 
     fn error(&mut self, e: Box<dyn std::error::Error>) {
         self.errors.push(e);
@@ -45,6 +51,7 @@ fn collect_fields_without_errors(input: &str) -> Vec<KeywordParseInfo> {
     tester.fields
 }
 /// Collect all (key, value, loc) triples produced by parse_fields
+/// as well as errors
 fn collect_fields_with_errors(
     input: &str,
 ) -> (Vec<KeywordParseInfo>, Vec<Box<dyn std::error::Error>>) {
@@ -54,6 +61,16 @@ fn collect_fields_with_errors(
 
     (tester.fields, tester.errors)
 }
+/// Collect all (key, value, loc) triples produced by parse_fields
+/// as well as commands
+fn collect_fields_and_commands(input: &str) -> (Vec<KeywordParseInfo>, Vec<TokenInfo>) {
+    let mut tester = DamoclesTester::default();
+
+    tester.parse_fields(input);
+
+    (tester.fields, tester.commands)
+}
+
 // =========================================================
 // Basic parsing
 // =========================================================
@@ -365,4 +382,23 @@ fn test_single_field_no_trailing_newline() {
     let fields = collect_fields_without_errors("KEY = value");
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].valuenames()[0], "value");
+}
+
+#[test]
+fn test_cmd_alone() {
+    let (fields, commands) = collect_fields_and_commands("&CMD");
+    assert_eq!(fields.len(), 0);
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].token, "&CMD");
+}
+
+#[test]
+fn test_cmd_mixed_with_fields() {
+    let input = "KEY1=value1\n&CMD\nKEY2=value";
+    let (fields, commands) = collect_fields_and_commands(input);
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].keyname(), "KEY1");
+    assert_eq!(fields[1].keyname(), "KEY2");
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].token, "&CMD");
 }
