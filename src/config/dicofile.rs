@@ -208,10 +208,6 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
 
     // Helper closures
-    // let get = |key: &'static str| -> Option<&Vec<TokenInfo>> {
-    //     let kpi = fields.get(key)?;
-    //     Some(&kpi.values)
-    // };
 
     // Get a vector of TokenInfo of exactly `expected_count`
     let get_n = |key: &'static str,
@@ -232,11 +228,7 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
                 got_count: parse_infos.len(),
             }));
 
-            // if parse_infos.len() > expected_count {
-            //     Some(&parse_infos[0..expected_count].to_vec())
-            // } else {
             None
-            // }
         } else {
             Some(parse_infos)
         }
@@ -245,24 +237,6 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     let get_one = |key: &'static str, errors: &mut VecErrorPtr| -> Option<&TokenInfo> {
         get_n(key, 1, errors).map(|v| &v[0])
     };
-
-    // let get_raw_val = |key: &'static str| -> Option<Vec<&String>> {
-    //     match fields.get(key) {
-    //         Some(desc) => Some(desc.into_iter().map(|d| &d.val).collect()),
-    //         None => None,
-    //     }
-    // };
-
-    // let get_val = |key: &'static str| -> Option<Vec<String>> {
-    //     get_raw_val(key).and_then(|values| {
-    //         Some(
-    //             values
-    //                 .into_iter()
-    //                 .map(|val| unquote_single(val.as_str()))
-    //                 .collect(),
-    //         )
-    //     })
-    // };
 
     let get_val_one = |key: &'static str, errors: &mut VecErrorPtr| -> Option<String> {
         get_one(key, errors).map(|token_info| token_info.token.clone())
@@ -279,23 +253,6 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
                 .collect()
         })
     };
-
-    // let require =
-    //     |key: &'static str, errors: &mut VecErrorPtr| -> Vec<String> {
-    //         match fields.get(key) {
-    //             Some(values) => values
-    //                 .into_iter()
-    //                 .map(|vpi| unquote_single(vpi.val.as_str()))
-    //                 .collect(),
-    //             None => {
-    //                 errors.push(Box::new(DicoParseError::MissingField {
-    //                     field: key,
-    //                     pos: block_pos.clone(),
-    //                 }));
-    //                 Vec::new()
-    //             }
-    //         }
-    //     };
 
     let require_one = |key: &'static str, errors: &mut VecErrorPtr| -> String {
         match get_one(key, errors) {
