@@ -10,7 +10,6 @@ pub use damocles::*;
 
 #[cfg(test)]
 mod tests {
-    mod find_key_assignment;
     mod parse_fortran_float;
     mod unquote_single;
 }
@@ -45,21 +44,4 @@ pub fn parse_fortran_float(s: &str) -> Result<f64, std::num::ParseFloatError> {
         .collect();
 
     normalized.parse::<f64>()
-}
-
-/// Returns the position of '=' if the line looks like "KEY = value"
-/// where KEY is uppercase letters, digits, underscores, and spaces.
-pub fn find_key_assignment(line: &str, key_validation_fct: fn(&str) -> bool) -> Option<usize> {
-    let eq_pos = line.find([':', '='])?;
-    let key_part = line[..eq_pos].trim();
-    // Key must be non-empty and contain only uppercase letters, digits, underscores
-    if key_part.is_empty() {
-        return None;
-    }
-
-    if key_validation_fct(key_part) {
-        Some(eq_pos)
-    } else {
-        None
-    }
 }
