@@ -25,19 +25,6 @@ pub enum ConfigValue {
     FloatCollection(Vec<f64>),
 }
 
-pub fn parse_value(raw_value: &str, kind: &DicoType, nargs: usize) -> Result<ConfigValue, String> {
-    let raw_value_list: Vec<&str> = parse_list(raw_value, kind, nargs);
-
-    // Be very permissive here
-    // consider it's a scalar if and only dico says so (indeed `nargs` came from the dico)
-    // and the value to parse too
-    if nargs == 1 && raw_value_list.len() == 1 {
-        parse_single_value(raw_value, kind)
-    } else {
-        parse_collection_values(raw_value_list, kind)
-    }
-}
-
 pub fn parse_value_2<E, ErrorMapper>(
     values: &Vec<TokenInfo>,
     kind: &DicoType,
@@ -164,38 +151,6 @@ where
                 .collect(),
         )),
     }
-}
-
-fn parse_list<'a>(raw_value: &'a str, kind: &DicoType, nargs: usize) -> Vec<&'a str> {
-    let mut splitted = raw_value.split(';');
-
-    // I don't understand why, but sometimes lists are separated with coma ','
-    // instead of semi-column.
-    // Only try the ',' if we really target a list and this is a list of words
-    // otherwise, we may experiences issues with some figures in French
-    // (coma is used to separate integer & decimal part in French)
-    if (raw_value.find(';').is_none()) && (*kind == DicoType::String) && (nargs != 1) {
-        splitted = raw_value.split(',');
-    }
-
-    let mut ret: Vec<&'a str> = splitted.map(|s| s.trim()).collect();
-
-    let ret_last_idx = ret.len() - 1;
-
-    let surrounded_by = |c| {
-        ret[0].starts_with(c)
-            && !ret[0].ends_with(c)
-            && !ret[ret_last_idx].starts_with(c)
-            && ret[ret_last_idx].ends_with(c)
-    };
-
-    if (nargs != 1) && !ret.is_empty() && (surrounded_by('\'') || surrounded_by('"')) {
-        ret[0] = &ret[0][1..];
-        let last_elt_len = ret[ret_last_idx].len();
-        ret[ret_last_idx] = &ret[ret_last_idx][..(last_elt_len - 1)];
-    }
-
-    ret
 }
 
 /// Parse a boolean with every possible alternative keywords

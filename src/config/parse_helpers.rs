@@ -1,7 +1,6 @@
 //! # Parse helpers
 //!
 //! Helper functions to parse config files
-use super::textloc::TextLoc;
 
 mod damocles;
 mod keywordparseinfo;
@@ -12,7 +11,6 @@ pub use damocles::*;
 #[cfg(test)]
 mod tests {
     mod find_key_assignment;
-    mod parse_fields;
     mod parse_fortran_float;
     mod unquote_single;
 }
@@ -49,84 +47,6 @@ pub fn parse_fortran_float(s: &str) -> Result<f64, std::num::ParseFloatError> {
     normalized.parse::<f64>()
 }
 
-fn toggle_single_quote(v: &str) -> bool {
-    let quote_count = v.chars().filter(|c| *c == '\'').count();
-
-    // If there is an even number of quote, it means we either close or open a quote
-    // block
-    (quote_count % 2) == 1
-}
-
-/// Parse "key = value" pairs from a block, handling multiline values.
-/// A new key starts when a line matches "IDENTIFIER = ...".
-pub fn parse_fields<T: FnMut(&str, String, TextLoc)>(
-    input: &str,
-    initial_pos: &TextLoc,
-    mut new_field: T,
-    key_validation_fct: fn(&str) -> bool,
-) {
-    let mut current_key: Option<&str> = None;
-    let mut current_key_line: usize = initial_pos.line();
-    let mut current_value = String::new();
-    let mut in_quote = false;
-
-    for (line_idx, line) in input.lines().enumerate() {
-        let trimmed = if in_quote {
-            line.trim_end()
-        } else {
-            strip_comment(line).trim()
-        };
-
-        if !in_quote {
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            // Check if this line starts a new key: "KEYWORD = ..."
-            // A key is all-uppercase (and underscores/digits), followed by " = "
-            if let Some(eq_pos) = find_key_assignment(trimmed, key_validation_fct) {
-                let candidate_key = trimmed[..eq_pos].trim();
-
-                // Save the previous key
-                if let Some(key) = current_key.take() {
-                    new_field(
-                        key,
-                        current_value.trim().to_string(),
-                        initial_pos.clone_with_line_offset(current_key_line),
-                    );
-                }
-                current_key = Some(candidate_key);
-                current_key_line = line_idx;
-                current_value = trimmed[eq_pos + 1..].trim().to_string();
-
-                if toggle_single_quote(current_value.as_str()) {
-                    in_quote = !in_quote;
-                }
-                continue;
-            }
-        }
-
-        if toggle_single_quote(trimmed) {
-            in_quote = !in_quote;
-        }
-
-        // Continuation of current value
-        if current_key.is_some() {
-            current_value.push('\n');
-            current_value.push_str(trimmed);
-        }
-    }
-
-    // Don't forget the last key
-    if let Some(key) = current_key {
-        new_field(
-            key,
-            current_value.trim().to_string(),
-            initial_pos.clone_with_line_offset(current_key_line),
-        );
-    }
-}
-
 /// Returns the position of '=' if the line looks like "KEY = value"
 /// where KEY is uppercase letters, digits, underscores, and spaces.
 pub fn find_key_assignment(line: &str, key_validation_fct: fn(&str) -> bool) -> Option<usize> {
@@ -142,31 +62,4 @@ pub fn find_key_assignment(line: &str, key_validation_fct: fn(&str) -> bool) -> 
     } else {
         None
     }
-}
-
-fn strip_comment(line: &str) -> &str {
-    let mut in_double_quotes = false;
-    let mut in_single_quotes = false;
-    let mut chars = line.char_indices().peekable();
-
-    while let Some((i, c)) = chars.next() {
-        match c {
-            '"' if !in_single_quotes => in_double_quotes = !in_double_quotes,
-            '\'' if !in_double_quotes => {
-                // Handle escaped single quote '' - peek at next char
-                if in_single_quotes {
-                    if chars.peek().map(|(_, c)| *c) == Some('\'') {
-                        chars.next(); // consume the second ', it's an escape
-                    } else {
-                        in_single_quotes = false;
-                    }
-                } else {
-                    in_single_quotes = true;
-                }
-            }
-            '/' | '#' if !in_double_quotes && !in_single_quotes => return &line[..i],
-            _ => {}
-        }
-    }
-    line
 }
