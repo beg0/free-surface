@@ -749,7 +749,14 @@ impl DicoKeyword {
                 let candidate = &values[index];
                 match self.normalize_single_choice(candidate) {
                     Ok(new_value) => output_vec.push(new_value),
-                    Err(reason) => errors.push((index, reason)),
+                    Err(reason) => {
+                        // Be permissive on DynList
+                        if self.selection_control == Some(GuiControl::DynList) {
+                            output_vec.push(candidate.clone());
+                        } else {
+                            errors.push((index, reason))
+                        }
+                    }
                 };
             }
 
