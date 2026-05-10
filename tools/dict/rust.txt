@@ -1,0 +1,4 @@
+clippy
+indoc
+rfind
+thiserror
