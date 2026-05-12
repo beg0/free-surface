@@ -32,8 +32,12 @@ pub struct KeywordTextDescription {
     pub name: String,                        // Keyword name
     pub choices_help: Vec<ChoiceOptionHelp>, // Help text for each possible values
     pub default_val: Option<ConfigValue>,    // Default value
-    pub classification: [String; 3],         // Classification, 3 levels
-    pub help: String,                        // Keyword description
+
+    #[allow(dead_code)]
+    pub classification: [String; 3], // Classification, 3 levels
+
+    #[allow(dead_code)]
+    pub help: String, // Keyword description
 }
 
 /// A single keyword entry from the dico file
