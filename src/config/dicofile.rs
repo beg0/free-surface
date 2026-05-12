@@ -44,16 +44,16 @@ pub struct KeywordTextDescription {
 #[derive(Debug, Clone)]
 pub struct DicoKeyword {
     pub text_desc: HashMap<String, KeywordTextDescription>, // localized description
-    pub type_: DicoType,
-    // pub index: u32,
-    pub nargs: u32, // Number of time this keyword may occur. 0 means infinite
-    pub submit: Vec<String>,
-    //pub mnemo: String,                         // Variable name in code
+    pub type_: DicoType, // Type of value that are stored for this keyword
+    // pub index: u32,          // Unused in free-surface
+    pub nargs: u32,          // Number of time this keyword may occur. 0 means infinite
+    pub submit: Vec<String>, // If not empty, location to store the config in the Bief file.
+    // pub mnemo: String,       // Variable name in code
     pub boundaries: Option<(f64, f64)>,        // min;max
     pub selection_control: Option<GuiControl>, // Which GUI control widget to use for this entry
-    pub compose: Option<String>,
-    pub comport: Option<String>,
-    pub level: u32, // 0 = mandatory
+    pub compose: Option<String>,               // Unused in free-surface
+    pub comport: Option<String>,               // Unused in free-surface
+    pub level: u32,                            // 0 = mandatory
 }
 
 #[derive(Debug, thiserror::Error)]
