@@ -1,0 +1,12 @@
+{
+    "allowCompoundWords": true,
+    "dictionaryDefinitions": [
+        { "name": "telemac", "path": "tools/dict/telemac.txt" },
+        { "name": "free-surface", "path": "tools/dict/free-surface.txt" },
+        { "name": "rust", "path": "tools/dict/rust.txt" }
+    ],
+    "dictionaries": ["telemac", "free-surface"],
+    "languageSettings": [
+        { "languageId": "Rust", "dictionaries": ["rust"] }
+    ]
+}
