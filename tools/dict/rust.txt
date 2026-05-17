@@ -1,4 +1,6 @@
+binrw
 clippy
 indoc
 rfind
+rustc
 thiserror

@@ -2,7 +2,15 @@ apparence
 bief
 dico
 dynlist
+ikle
+ipob
 liste
 mnemo
+nelem
+npoin2
+npoin3
+nbvar
+nplan
+selafin
 telemac
 tomawac
