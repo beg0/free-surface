@@ -22,7 +22,7 @@ pub struct Selafin {
     title: String,
 
     /// (X,Y) coordinate of origin
-    pub origin: (u32, u32),
+    origin: (u32, u32),
 
     geo: SlfGeometry,
 
@@ -36,13 +36,17 @@ pub struct Selafin {
     results: TimeSerie,
 
     /// Date & time of creation of the Selafin
-    pub datetime: Option<NaiveDateTime>,
+    datetime: Option<NaiveDateTime>,
 }
 
 impl Selafin {
     /// Title of the study
     pub fn title(&self) -> &String {
         &self.title
+    }
+
+    pub fn origin(&self) -> (u32, u32) {
+        self.origin
     }
 
     /// Return total number of variable in Selafin file
@@ -66,6 +70,10 @@ impl Selafin {
 
     pub fn geometry(&self) -> &SlfGeometry {
         &self.geo
+    }
+
+    pub fn datetime(&self) -> Option<NaiveDateTime> {
+        self.datetime
     }
 }
 
