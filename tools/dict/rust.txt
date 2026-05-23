@@ -1,6 +1,7 @@
 binrw
 clippy
 indoc
+isize
 rfind
 rustc
 thiserror

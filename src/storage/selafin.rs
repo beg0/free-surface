@@ -5,31 +5,16 @@
 //! Selafin is sometimes spelled Serafin, or even Selaphin.
 //!
 
-use chrono::NaiveDateTime;
-
+pub mod container;
 mod parser;
-pub use parser::parse_file;
+mod variable;
 
-#[derive(Debug, Clone)]
-pub struct SlfVariable {
-    pub name: String,
-    pub unit: String,
-}
+use chrono::NaiveDateTime;
+use container::SlfArray2D;
+use variable::SlfVariable;
 
-impl SlfVariable {
-    pub fn new(name: &str, unit: &str) -> Self {
-        SlfVariable {
-            name: name.to_string(),
-            unit: unit.to_string(),
-        }
-    }
-}
+pub use parser::{parse, parse_file};
 
-#[derive(Debug)]
-pub enum SlfMesh {
-    Float { x: Vec<f32>, y: Vec<f32> },
-    Double { x: Vec<f64>, y: Vec<f64> },
-}
 #[derive(Debug)]
 pub struct Selafin {
     /// Title of the study
@@ -44,30 +29,24 @@ pub struct Selafin {
     /// Number of interfaces (for parallel computation)
     pub interfaces_count: u32,
 
-    pub nelem2: u32,
-    pub npoin2: u32,
-    pub npd2: i32,
-    pub ikle2: Vec<u32>,
-    pub ipob2: Vec<i32>,
-
-    nelem3: u32,
-    npoin3: u32,
+    nelem3: usize,
+    npoin3: usize,
 
     /// Number of points per elements
     /// Typically 3 in 2D and 6 in 3D
-    npd3: u32,
+    npd3: usize,
 
     /// Number of planes (3D computation)
     nplan: u32,
 
     /// The connectivity table, size of 'nelem3' * 'npd3'
     /// Indexes of nodes to connect each nodes together (0-based indexes)
-    ikle3: Vec<u32>,
+    mesh: Vec<u32>,
 
     /// Indexes of nodes at the boundary (0-based indexes)
     /// The value of an element is 0 for an inner point and yields the edge
     /// point numbers for the others),
-    ipob3: Vec<i32>,
+    ipob3: Vec<u32>,
 
     /// Linear variables stored in history results
     var: Vec<SlfVariable>,
@@ -76,10 +55,10 @@ pub struct Selafin {
     cld: Vec<SlfVariable>,
 
     /// Coordinates of each points of the mesh
-    mesh: SlfMesh,
+    points: SlfArray2D,
 
     /// Date & time of creation of the Selafin
-    pub datetime: NaiveDateTime,
+    pub datetime: Option<NaiveDateTime>,
 }
 
 impl Default for Selafin {
@@ -94,39 +73,30 @@ impl Default for Selafin {
             boundaries_count: 0,
             interfaces_count: 0,
 
-            nelem2: 0,
-            npoin2: 0,
-            npd2: 0,
-            ikle2: vec![],
-            ipob2: vec![],
             nelem3: 0,
             npoin3: 0,
             npd3: 0,
             nplan: 1,
-            ikle3: vec![],
+            mesh: vec![],
             ipob3: vec![],
 
             var: vec![],
-            // pub nbv1: u32 = 0,
-            // pub varnames: [String],
-            // pub varunits: [String],
             cld: vec![],
-            // pub nbv2: u32 = 0,
-            // pub cldnames: [String],
-            // pub cldunits: [String],
-            mesh: SlfMesh::Float {
+            points: SlfArray2D::Float {
                 x: vec![],
                 y: vec![],
             },
-            datetime: NaiveDateTime::new(
-                chrono::NaiveDate::from_ymd_opt(1972, 7, 13).unwrap(),
-                chrono::NaiveTime::from_hms_opt(17, 15, 13).unwrap(),
-            ),
+            datetime: None,
         }
     }
 }
 
 impl Selafin {
+    /// Title of the study
+    pub fn title(&self) -> &String {
+        &self.title
+    }
+
     /// Return total number of variable in Selafin file
     pub fn nbvar(&self) -> usize {
         self.var.len() + self.cld.len()
@@ -140,6 +110,132 @@ impl Selafin {
     /// Return number of quadratic variables
     pub fn nbvar2(&self) -> usize {
         self.cld.len()
+    }
+
+    /// Tell if the Selafin is for 2D of 3D computation
+    pub fn dimension(&self) -> u32 {
+        if self.nplan > 1 {
+            3
+        } else {
+            2
+        }
+    }
+
+    /// Number of plane (layer) in  the Selafin file
+    /// Always 1 for 2D files, always >= 2 for 3D files
+    pub fn planes_cnt(&self) -> u32 {
+        self.nplan
+    }
+
+    /// Number of points in a 2D plane (layer)
+    ///
+    /// For 2D selafin, this is the same as [self.points_count]
+    /// For 3D Selafin, this is the total number of points ([self.points_count]) divided by the number of
+    /// layer as there is the same number of points for each layer.
+    pub fn points_per_layer(&self) -> usize {
+        if self.nplan > 1 {
+            // The number of points is the same for every layer (regular mesh)
+            self.points.len() / (self.nplan as usize)
+        } else {
+            self.points.len()
+        }
+    }
+
+    /// Alias for [self.points_per_layer] for Telemac compatibility
+    pub fn npoin2(&self) -> usize {
+        self.points_per_layer()
+    }
+
+    /// Total number of points in the mesh
+    pub fn points_count(&self) -> usize {
+        self.points.len()
+    }
+
+    /// Alias for [self.points_count] for Telemac compatibility
+    pub fn npoin3(&self) -> usize {
+        self.points.len()
+    }
+
+    /// Number of triangular in a 2D plane (layer)
+    ///
+    /// For 2D selafin, this is the same as [self.elements_count]
+    /// For 3D Selafin, this is the total number of elements ([self.elements_count]) divided by the number of
+    /// layer as there is the same number of element for each layer.
+    pub fn elements_per_layer(&self) -> usize {
+        if self.nplan > 1 {
+            // The number of points is the same for every layer (regular mesh)
+            self.nelem3 / (self.nplan as usize - 1)
+        } else {
+            self.nelem3
+        }
+    }
+
+    /// Alias for [self.elements_per_layer] for Telemac compatibility
+    pub fn nelem2(&self) -> usize {
+        self.elements_per_layer()
+    }
+
+    /// Total number of element (triangular or prism) or  in the mesh
+    pub fn elements_count(&self) -> usize {
+        self.nelem3
+    }
+
+    /// Number of points per element on a layer
+    ///
+    /// In 2D, this is the same as the number of points per layer
+    /// In 3D, it's half the number of point per element as there is no need
+    /// to connect to upper layer
+    pub fn point_per_layer_element(&self) -> usize {
+        if self.nplan > 1 {
+            self.npd3 / 2 // triangular prism: 6 nodes → 3 in 2-D
+        } else {
+            self.npd3
+        }
+    }
+
+    /// Alias for [self.point_per_layer_element] for Telemac compatibility
+    pub fn npd2(&self) -> usize {
+        self.point_per_layer_element()
+    }
+
+    pub fn point_per_element(&self) -> usize {
+        self.npd3
+    }
+
+    /// Return elements of a single layer
+    ///
+    /// Layer 0 is the bottom layer, layer `self.planes_cnt() - 1` is the upper layer
+    /// For 2D selafin, only layer 0 is valid
+    pub fn ikle2(&self, layer: usize) -> Option<&[u32]> {
+        let points_per_layer = self.elements_per_layer() * self.point_per_layer_element();
+        if layer >= self.nplan as usize {
+            None
+        } else {
+            Some(&self.mesh[layer * points_per_layer..(layer + 1) * points_per_layer])
+        }
+    }
+
+    /// Return all elements of the selafin
+    pub fn ikle3<const N: usize>(&self) -> Option<&[u32; N]> {
+        self.mesh.as_array()
+    }
+
+    /// Return elements of a single layer
+    ///
+    /// Layer 0 is the bottom layer, layer `self.planes_cnt() - 1` is the upper layer
+    /// For 2D selafin, only layer 0 is valid
+    pub fn ipob2(&self, layer: usize) -> Option<&[u32]> {
+        let points_per_layer = self.elements_per_layer() * self.point_per_layer_element();
+        if layer >= self.nplan as usize {
+            None
+        } else {
+            Some(&self.mesh[layer * points_per_layer..(layer + 1) * points_per_layer])
+        }
+    }
+
+    /// Return all elements of the selafin
+    pub fn ipob3<const N: usize>(&self) -> Option<&[u32; N]> {
+        self.ipob3.as_array()
     }
 }
 

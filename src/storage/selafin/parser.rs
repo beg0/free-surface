@@ -3,7 +3,9 @@
 //! Parses the Selafin binary file format.
 //! Supports both big-endian and little-endian files, and both f32 and f64 meshes.
 
-use super::{Selafin, SlfMesh, SlfVariable};
+use super::container::{FloatSize, SlfArray2D};
+use super::variable::SlfVariable;
+use super::Selafin;
 use binrw::{BinReaderExt, Endian};
 use chrono::NaiveDateTime;
 use std::cmp::max;
@@ -89,6 +91,7 @@ fn read_u32s(data: &[u8], endian: Endian) -> Vec<u32> {
         .collect()
 }
 
+#[allow(dead_code)]
 fn read_i32s(data: &[u8], endian: Endian) -> Vec<i32> {
     data.chunks_exact(4)
         .map(|b| {
@@ -144,26 +147,20 @@ fn split_fixed_strings(data: &[u8], width: usize) -> Vec<String> {
 // Float-size detection
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum FloatSize {
-    F32,
-    F64,
-}
-
 /// After all integer geometry records have been consumed, the next record
 /// contains `npoin3` floats.  We know npoin3, so we can check which size fits.
 fn detect_float_size<R: Read + Seek>(
     reader: &mut R,
     endian: Endian,
-    npoin3: u32,
+    npoin3: usize,
 ) -> binrw::BinResult<FloatSize> {
     let start = reader.stream_position()?;
 
     let data = read_record(reader, endian)?;
     reader.seek(SeekFrom::Start(start))?;
 
-    let expected_f32 = npoin3 as usize * 4;
-    let expected_f64 = npoin3 as usize * 8;
+    let expected_f32 = npoin3 * size_of::<f32>();
+    let expected_f64 = npoin3 * size_of::<f64>();
 
     if data.len() == expected_f32 {
         Ok(FloatSize::F32)
@@ -220,9 +217,10 @@ fn parse_datetime(vals: &[u32], pos: u64) -> binrw::BinResult<NaiveDateTime> {
 /// ```no_run
 /// use std::fs::File;
 /// use std::io::BufReader;
+/// use free_surface::storage::selafin;
 ///
 /// let f = File::open("my_file.slf").unwrap();
-/// let selafin = parser::parse(BufReader::new(f)).unwrap();
+/// let selafin = selafin::parse(BufReader::new(f)).unwrap();
 /// ```
 pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // -----------------------------------------------------------------------
@@ -298,7 +296,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
             });
         }
 
-        slf.datetime = parse_datetime(&vals[..6], reader.stream_position()?)?;
+        slf.datetime = Some(parse_datetime(&vals[..6], reader.stream_position()?)?);
     }
 
     // -----------------------------------------------------------------------
@@ -315,9 +313,9 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 message: format!("Geometry integer header has only {} values", vals.len()),
             });
         }
-        slf.nelem3 = vals[0];
-        slf.npoin3 = vals[1];
-        slf.npd3 = vals[2];
+        slf.nelem3 = vals[0] as usize;
+        slf.npoin3 = vals[1] as usize;
+        slf.npd3 = vals[2] as usize;
         slf.nplan = max(vals[3], 1);
 
         if slf.nplan != max(iparams[IParams::PlanesCnt as usize], 1) {
@@ -330,22 +328,11 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 ),
             });
         }
-
-        // Derive 2-D values
-        if slf.nplan > 1 {
-            slf.nelem2 = slf.nelem3 / (slf.nplan - 1);
-            slf.npoin2 = slf.npoin3 / slf.nplan;
-            slf.npd2 = slf.npd3 as i32 / 2; // triangular prism: 6 nodes → 3 in 2-D
-        } else {
-            slf.nelem2 = slf.nelem3;
-            slf.npoin2 = slf.npoin3;
-            slf.npd2 = slf.npd3 as i32;
-        }
     }
 
     // 2.2 - ikle3 (nelem3 × npd3 connectivity table)
     {
-        let expected = (slf.nelem3 * slf.npd3) as usize;
+        let expected = slf.nelem3 * slf.npd3;
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() != expected {
@@ -358,15 +345,15 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 ),
             });
         }
-        slf.ikle3 = vals;
+        slf.mesh = vals.iter().map(|v| v - 1).collect();
     }
 
     // 2.3 - ipob3 (npoin3 boundary codes)
     // TODO: if iparams[7] or iparams[8] != 0, then it's KNOLG and not IPOBO
     {
-        let expected = slf.npoin3 as usize;
+        let expected = slf.npoin3;
         let data = read_record(&mut reader, endian)?;
-        let vals = read_i32s(&data, endian);
+        let vals = read_u32s(&data, endian);
         if vals.len() != expected {
             return Err(binrw::Error::AssertFail {
                 pos: reader.stream_position()?,
@@ -377,22 +364,14 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 ),
             });
         }
-        slf.ipob3 = vals;
-    }
 
-    // Derive 2-D connectivity / boundary arrays from 3-D equivalents when 3-D
-    if slf.nplan > 1 {
-        let npd2 = slf.npd2 as usize;
-        //let npd3 = slf.npd3 as usize;
-        let nelem2 = slf.nelem2 as usize;
-        // Bottom layer of ikle3 gives ikle2
-        slf.ikle2 = slf.ikle3[..nelem2 * npd2].to_vec();
-        // Bottom layer of ipob3 gives ipob2
-        let npoin2 = slf.npoin2 as usize;
-        slf.ipob2 = slf.ipob3[..npoin2].to_vec();
-    } else {
-        slf.ikle2 = slf.ikle3.clone();
-        slf.ipob2 = slf.ipob3.clone();
+        // Values in Slf files are 1-based indexes where '0' means invalid value
+        // (e.g. inner node in that case)
+        // Let's remove invalid value and make the indexes 0-based
+        slf.ipob3 = vals
+            .iter()
+            .filter_map(|v| if *v == 0 { None } else { Some(*v - 1) })
+            .collect();
     }
 
     // -----------------------------------------------------------------------
@@ -400,19 +379,37 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // -----------------------------------------------------------------------
     let float_size = detect_float_size(&mut reader, endian, slf.npoin3)?;
 
-    let mesh_x_data = read_record(&mut reader, endian)?;
-    let mesh_y_data = read_record(&mut reader, endian)?;
+    let x_coords_data = read_record(&mut reader, endian)?;
+    let y_coords_data = read_record(&mut reader, endian)?;
 
-    slf.mesh = match float_size {
-        FloatSize::F32 => SlfMesh::Float {
-            x: read_f32s(&mesh_x_data, endian),
-            y: read_f32s(&mesh_y_data, endian),
+    slf.points = match float_size {
+        FloatSize::F32 => SlfArray2D::Float {
+            x: read_f32s(&x_coords_data, endian),
+            y: read_f32s(&y_coords_data, endian),
         },
-        FloatSize::F64 => SlfMesh::Double {
-            x: read_f64s(&mesh_x_data, endian),
-            y: read_f64s(&mesh_y_data, endian),
+        FloatSize::F64 => SlfArray2D::Double {
+            x: read_f64s(&x_coords_data, endian),
+            y: read_f64s(&y_coords_data, endian),
         },
     };
+
+    let (x_len, y_len) = match &slf.points {
+        SlfArray2D::Float { x, y } => (x.len(), y.len()),
+        SlfArray2D::Double { x, y } => (x.len(), y.len()),
+    };
+
+    // Make sure x & y has the same length! Later (in slf.points_count())
+    // we are only relying on the size of 'x' vector
+    if (x_len != slf.npoin3) || (y_len != slf.npoin3) {
+        return Err(binrw::Error::AssertFail {
+            pos: reader.stream_position()?,
+            message: format!(
+                "Inconsistent number of points.
+                Header says {} points, x record says {} points, y records says {}",
+                slf.npoin3, x_len, y_len,
+            ),
+        });
+    }
 
     // -----------------------------------------------------------------------
     // 5. Optional time history (remaining records, each npoin3 floats)
