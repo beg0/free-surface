@@ -57,6 +57,23 @@ impl TimeSerie {
     pub fn var_count(&self) -> usize {
         self.vars.len()
     }
+
+    /// The time axis as a slice-like reference to the underlying SlfArray1D.
+    pub fn time(&self) -> &SlfArray1D {
+        &self.time
+    }
+
+    /// Iterate over all variable evolutions in insertion-independent order.
+    /// Yields `(&name, &VariableEvolution)` pairs.
+    pub fn iter_vars(&self) -> impl Iterator<Item = (&String, &VariableEvolution)> {
+        self.vars.iter()
+    }
+
+    /// Look up a single variable evolution by name.
+    pub fn get_var(&self, name: &str) -> Option<&VariableEvolution> {
+        let upper_name = name.to_uppercase();
+        self.vars.get(&upper_name)
+    }
 }
 
 #[cfg(test)]

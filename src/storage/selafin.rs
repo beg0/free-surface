@@ -64,6 +64,16 @@ impl Selafin {
         self.cld.len()
     }
 
+    /// The ordered list of linear variable definitions.
+    pub fn var_defs(&self) -> &[SlfVariable] {
+        &self.var
+    }
+
+    /// The ordered list of quadratic variable definitions.
+    pub fn cld_defs(&self) -> &[SlfVariable] {
+        &self.cld
+    }
+
     pub fn results(&self) -> &TimeSerie {
         &self.results
     }

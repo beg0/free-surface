@@ -120,6 +120,11 @@ impl SlfGeometry {
         self.points.len()
     }
 
+    /// The coordinate arrays for all mesh nodes.
+    pub fn points_raw(&self) -> &SlfArray2D {
+        &self.points
+    }
+
     /// Number of triangular in a 2D plane (layer)
     ///
     /// For 2D selafin, this is the same as [self.elements_count]
@@ -181,8 +186,8 @@ impl SlfGeometry {
     }
 
     /// Return all elements of the selafin
-    pub fn ikle3<const N: usize>(&self) -> Option<&[u32; N]> {
-        self.mesh.as_array()
+    pub fn ikle3(&self) -> &[u32] {
+        &self.mesh
     }
 
     /// Return elements of a single layer
@@ -199,8 +204,8 @@ impl SlfGeometry {
     }
 
     /// Return all elements of the selafin
-    pub fn ipob3<const N: usize>(&self) -> Option<&[u32; N]> {
-        self.ipob3.as_array()
+    pub fn ipob3(&self) -> &[u32] {
+        &self.ipob3
     }
 }
 
