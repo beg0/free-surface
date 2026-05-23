@@ -619,4 +619,514 @@ pub fn parse_file<P: AsRef<Path>>(path: P) -> binrw::BinResult<Selafin> {
     parse(BufReader::new(file))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    // -----------------------------------------------------------------------
+    // Helpers to build raw binary buffers
+    // -----------------------------------------------------------------------
+
+    /// Wrap `payload` in a Fortran-style record (u32 length + data + u32 length)
+    /// using the given endianness.
+    fn make_record(payload: &[u8], endian: Endian) -> Vec<u8> {
+        let len = payload.len() as u32;
+        let len_bytes = match endian {
+            Endian::Big => len.to_be_bytes(),
+            Endian::Little => len.to_le_bytes(),
+        };
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&len_bytes);
+        buf.extend_from_slice(payload);
+        buf.extend_from_slice(&len_bytes);
+        buf
+    }
+
+    fn f32_bytes(v: f32, endian: Endian) -> [u8; 4] {
+        match endian {
+            Endian::Big => v.to_be_bytes(),
+            Endian::Little => v.to_le_bytes(),
+        }
+    }
+
+    fn f64_bytes(v: f64, endian: Endian) -> [u8; 8] {
+        match endian {
+            Endian::Big => v.to_be_bytes(),
+            Endian::Little => v.to_le_bytes(),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ascii_record_to_string
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ascii_record_trims_trailing_spaces() {
+        let s = ascii_record_to_string(b"HELLO WORLD         ");
+        assert_eq!(s, "HELLO WORLD");
+    }
+
+    #[test]
+    fn ascii_record_empty_input_gives_empty_string() {
+        assert_eq!(ascii_record_to_string(b""), "");
+    }
+
+    #[test]
+    fn ascii_record_all_spaces_gives_empty_string() {
+        assert_eq!(ascii_record_to_string(b"        "), "");
+    }
+
+    #[test]
+    fn ascii_record_no_trailing_spaces_unchanged() {
+        assert_eq!(ascii_record_to_string(b"EXACT"), "EXACT");
+    }
+
+    #[test]
+    fn ascii_record_preserves_inner_spaces() {
+        assert_eq!(ascii_record_to_string(b"A B C   "), "A B C");
+    }
+
+    // -----------------------------------------------------------------------
+    // split_fixed_strings
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn split_fixed_strings_splits_into_correct_chunks() {
+        let data = b"VELOCITY U      M/S             ";
+        let parts = split_fixed_strings(data, 16);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], "VELOCITY U");
+        assert_eq!(parts[1], "M/S");
+    }
+
+    #[test]
+    fn split_fixed_strings_trims_trailing_spaces_per_chunk() {
+        let data = b"DEPTH           M               ";
+        let parts = split_fixed_strings(data, 16);
+        assert_eq!(parts[0], "DEPTH");
+        assert_eq!(parts[1], "M");
+    }
+
+    #[test]
+    fn split_fixed_strings_handles_exact_width_input() {
+        let data = b"ABCDEFGHIJKLMNOP"; // exactly 16 bytes cspell: disable-line
+        let parts = split_fixed_strings(data, 16);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0], "ABCDEFGHIJKLMNOP"); // cspell: disable-line
+    }
+
+    #[test]
+    fn split_fixed_strings_empty_input_gives_empty_vec() {
+        let parts = split_fixed_strings(b"", 16);
+        assert!(parts.is_empty());
+    }
+
+    #[test]
+    fn split_fixed_strings_partial_last_chunk_is_included() {
+        // 20 bytes with width 16: one full chunk + one 4-byte remainder
+        let data = b"DEPTH           ABCD";
+        let parts = split_fixed_strings(data, 16);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[1], "ABCD");
+    }
+
+    // -----------------------------------------------------------------------
+    // read_u32s
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn read_u32s_big_endian() {
+        let data: Vec<u8> = [1u32, 2, 3].iter().flat_map(|v| v.to_be_bytes()).collect();
+        assert_eq!(read_u32s(&data, Endian::Big), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn read_u32s_little_endian() {
+        let data: Vec<u8> = [1u32, 2, 3].iter().flat_map(|v| v.to_le_bytes()).collect();
+        assert_eq!(read_u32s(&data, Endian::Little), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn read_u32s_ignores_trailing_incomplete_bytes() {
+        // 9 bytes: 2 full u32 + 1 leftover byte, chunks_exact discards the tail
+        let mut data: Vec<u8> = [1u32, 2].iter().flat_map(|v| v.to_be_bytes()).collect();
+        data.push(0xFF);
+        assert_eq!(read_u32s(&data, Endian::Big), vec![1, 2]);
+    }
+
+    #[test]
+    fn read_u32s_empty_input_gives_empty_vec() {
+        assert!(read_u32s(&[], Endian::Big).is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // read_f32s
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn read_f32s_big_endian() {
+        let data: Vec<u8> = [1.0f32, 2.5, -3.0]
+            .iter()
+            .flat_map(|v| v.to_be_bytes())
+            .collect();
+        let result = read_f32s(&data, Endian::Big);
+        assert!((result[0] - 1.0f32).abs() < 1e-6);
+        assert!((result[1] - 2.5f32).abs() < 1e-6);
+        assert!((result[2] - (-3.0f32)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn read_f32s_little_endian() {
+        let data: Vec<u8> = [1.0f32, 2.5].iter().flat_map(|v| v.to_le_bytes()).collect();
+        let result = read_f32s(&data, Endian::Little);
+        assert!((result[0] - 1.0f32).abs() < 1e-6);
+        assert!((result[1] - 2.5f32).abs() < 1e-6);
+    }
+
+    #[test]
+    fn read_f32s_empty_input_gives_empty_vec() {
+        assert!(read_f32s(&[], Endian::Big).is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // read_f64s
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn read_f64s_big_endian() {
+        let data: Vec<u8> = [1.0f64, 2.5, -3.0]
+            .iter()
+            .flat_map(|v| v.to_be_bytes())
+            .collect();
+        let result = read_f64s(&data, Endian::Big);
+        assert!((result[0] - 1.0f64).abs() < 1e-12);
+        assert!((result[1] - 2.5f64).abs() < 1e-12);
+        assert!((result[2] - (-3.0f64)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn read_f64s_little_endian() {
+        let data: Vec<u8> = [1.0f64, 2.5].iter().flat_map(|v| v.to_le_bytes()).collect();
+        let result = read_f64s(&data, Endian::Little);
+        assert!((result[0] - 1.0f64).abs() < 1e-12);
+        assert!((result[1] - 2.5f64).abs() < 1e-12);
+    }
+
+    #[test]
+    fn read_f64s_empty_input_gives_empty_vec() {
+        assert!(read_f64s(&[], Endian::Big).is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // parse_datetime
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_datetime_valid_values() {
+        let vals = [1972, 7, 13, 17, 15, 13];
+        let dt = parse_datetime(&vals, 0).unwrap();
+        assert_eq!(format!("{}", dt.date().format("%Y-%m-%d")), "1972-07-13");
+        assert_eq!(format!("{}", dt.time().format("%H:%M:%S")), "17:15:13");
+    }
+
+    #[test]
+    fn parse_datetime_midnight_is_valid() {
+        let vals = [2000, 1, 1, 0, 0, 0];
+        assert!(parse_datetime(&vals, 0).is_ok());
+    }
+
+    #[test]
+    fn parse_datetime_end_of_day_is_valid() {
+        let vals = [2000, 12, 31, 23, 59, 59];
+        assert!(parse_datetime(&vals, 0).is_ok());
+    }
+
+    #[test]
+    fn parse_datetime_invalid_month_returns_error() {
+        let vals = [2000, 13, 1, 0, 0, 0]; // month 13
+        assert!(parse_datetime(&vals, 0).is_err());
+    }
+
+    #[test]
+    fn parse_datetime_invalid_day_returns_error() {
+        let vals = [2000, 2, 30, 0, 0, 0]; // Feb 30 never exists
+        assert!(parse_datetime(&vals, 0).is_err());
+    }
+
+    #[test]
+    fn parse_datetime_invalid_hour_returns_error() {
+        let vals = [2000, 1, 1, 24, 0, 0]; // hour 24
+        assert!(parse_datetime(&vals, 0).is_err());
+    }
+
+    #[test]
+    fn parse_datetime_invalid_minute_returns_error() {
+        let vals = [2000, 1, 1, 0, 60, 0]; // minute 60
+        assert!(parse_datetime(&vals, 0).is_err());
+    }
+
+    #[test]
+    fn parse_datetime_invalid_second_returns_error() {
+        let vals = [2000, 1, 1, 0, 0, 60]; // second 60
+        assert!(parse_datetime(&vals, 0).is_err());
+    }
+
+    #[test]
+    fn parse_datetime_month_zero_returns_error() {
+        let vals = [2000, 0, 1, 0, 0, 0]; // month 0
+        assert!(parse_datetime(&vals, 0).is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // read_record
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn read_record_valid_little_endian() {
+        let payload = b"HELLO";
+        let buf = make_record(payload, Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        let result = read_record(&mut cursor, Endian::Little).unwrap();
+        assert_eq!(result, payload);
+    }
+
+    #[test]
+    fn read_record_valid_big_endian() {
+        let payload = b"WORLD";
+        let buf = make_record(payload, Endian::Big);
+        let mut cursor = Cursor::new(buf);
+        let result = read_record(&mut cursor, Endian::Big).unwrap();
+        assert_eq!(result, payload);
+    }
+
+    #[test]
+    fn read_record_empty_payload() {
+        let buf = make_record(b"", Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        let result = read_record(&mut cursor, Endian::Little).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn read_record_mismatched_trailer_returns_error() {
+        let payload = b"DATA";
+        let len = payload.len() as u32;
+        let wrong_len = len + 1;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(payload);
+        buf.extend_from_slice(&wrong_len.to_le_bytes()); // trailer != header
+        let mut cursor = Cursor::new(buf);
+        assert!(read_record(&mut cursor, Endian::Little).is_err());
+    }
+
+    #[test]
+    fn read_record_wrong_endian_returns_error() {
+        // Build a valid LE record, try to read it as BE — length mismatch expected
+        let payload = vec![0u8; 80];
+        let buf = make_record(&payload, Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        // Reading as BE will interpret the length bytes incorrectly, likely failing
+        assert!(read_record(&mut cursor, Endian::Big).is_err());
+    }
+
+    #[test]
+    fn read_record_advances_cursor_to_end_of_record() {
+        let payload = b"ABCDE";
+        let buf = make_record(payload, Endian::Little);
+        let total_len = buf.len() as u64;
+        let mut cursor = Cursor::new(buf);
+        read_record(&mut cursor, Endian::Little).unwrap();
+        assert_eq!(cursor.position(), total_len);
+    }
+
+    // -----------------------------------------------------------------------
+    // detect_endianness
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn detect_endianness_little_endian_file() {
+        let buf = make_record(
+            b"SELAFIN TITLE                                                           ",
+            Endian::Little,
+        );
+        let mut cursor = Cursor::new(buf);
+        let endian = detect_endianness(&mut cursor).unwrap();
+        assert_eq!(endian, Endian::Little);
+    }
+
+    #[test]
+    fn detect_endianness_big_endian_file() {
+        let buf = make_record(
+            b"SELAFIN TITLE                                                           ",
+            Endian::Big,
+        );
+        let mut cursor = Cursor::new(buf);
+        let endian = detect_endianness(&mut cursor).unwrap();
+        assert_eq!(endian, Endian::Big);
+    }
+
+    #[test]
+    fn detect_endianness_rewinds_cursor_to_start() {
+        let buf = make_record(
+            b"SOME TITLE                                                              ",
+            Endian::Little,
+        );
+        let mut cursor = Cursor::new(buf);
+        detect_endianness(&mut cursor).unwrap();
+        // After detection the cursor must be back at 0 so the caller can re-read
+        assert_eq!(cursor.position(), 0);
+    }
+
+    #[test]
+    fn detect_endianness_invalid_data_returns_error() {
+        // Pure garbage: no valid Fortran record possible in either endianness
+        let buf = vec![0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01];
+        let mut cursor = Cursor::new(buf);
+        assert!(detect_endianness(&mut cursor).is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // detect_float_size
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn detect_float_size_f32_little_endian() {
+        let npoin3 = 4usize;
+        let payload: Vec<u8> = (0..npoin3)
+            .flat_map(|i| f32_bytes(i as f32, Endian::Little))
+            .collect();
+        let buf = make_record(&payload, Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        let result = detect_float_size(&mut cursor, Endian::Little, npoin3).unwrap();
+        assert_eq!(result, FloatSize::F32);
+    }
+
+    #[test]
+    fn detect_float_size_f64_little_endian() {
+        let npoin3 = 4usize;
+        let payload: Vec<u8> = (0..npoin3)
+            .flat_map(|i| f64_bytes(i as f64, Endian::Little))
+            .collect();
+        let buf = make_record(&payload, Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        let result = detect_float_size(&mut cursor, Endian::Little, npoin3).unwrap();
+        assert_eq!(result, FloatSize::F64);
+    }
+
+    #[test]
+    fn detect_float_size_f32_big_endian() {
+        let npoin3 = 3usize;
+        let payload: Vec<u8> = (0..npoin3)
+            .flat_map(|i| f32_bytes(i as f32, Endian::Big))
+            .collect();
+        let buf = make_record(&payload, Endian::Big);
+        let mut cursor = Cursor::new(buf);
+        let result = detect_float_size(&mut cursor, Endian::Big, npoin3).unwrap();
+        assert_eq!(result, FloatSize::F32);
+    }
+
+    #[test]
+    fn detect_float_size_f64_big_endian() {
+        let npoin3 = 3usize;
+        let payload: Vec<u8> = (0..npoin3)
+            .flat_map(|i| f64_bytes(i as f64, Endian::Big))
+            .collect();
+        let buf = make_record(&payload, Endian::Big);
+        let mut cursor = Cursor::new(buf);
+        let result = detect_float_size(&mut cursor, Endian::Big, npoin3).unwrap();
+        assert_eq!(result, FloatSize::F64);
+    }
+
+    #[test]
+    fn detect_float_size_rewinds_cursor_to_start() {
+        let npoin3 = 2usize;
+        let payload: Vec<u8> = (0..npoin3)
+            .flat_map(|i| f32_bytes(i as f32, Endian::Little))
+            .collect();
+        let buf = make_record(&payload, Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        detect_float_size(&mut cursor, Endian::Little, npoin3).unwrap();
+        // Must rewind so the caller can consume the record normally
+        assert_eq!(cursor.position(), 0);
+    }
+
+    #[test]
+    fn detect_float_size_wrong_npoin3_returns_error() {
+        // Build an f32 record for 4 points but tell the function to expect 5
+        let npoin3 = 4usize;
+        let payload: Vec<u8> = (0..npoin3)
+            .flat_map(|i| f32_bytes(i as f32, Endian::Little))
+            .collect();
+        let buf = make_record(&payload, Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        assert!(detect_float_size(&mut cursor, Endian::Little, npoin3 + 1).is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // read_variable_records
+    // -----------------------------------------------------------------------
+
+    fn make_variable_record(name: &str, unit: &str, endian: Endian) -> Vec<u8> {
+        let mut payload = [b' '; 32];
+        let name_bytes = name.as_bytes();
+        let unit_bytes = unit.as_bytes();
+        payload[..name_bytes.len().min(16)]
+            .copy_from_slice(&name_bytes[..name_bytes.len().min(16)]);
+        payload[16..16 + unit_bytes.len().min(16)]
+            .copy_from_slice(&unit_bytes[..unit_bytes.len().min(16)]);
+        make_record(&payload, endian)
+    }
+
+    #[test]
+    fn read_variable_records_parses_name_and_unit() {
+        let buf = make_variable_record("VELOCITY U", "M/S", Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        let vars = read_variable_records(&mut cursor, Endian::Little, 1).unwrap();
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "VELOCITY U");
+        assert_eq!(vars[0].unit, "M/S");
+    }
+
+    #[test]
+    fn read_variable_records_parses_multiple_variables() {
+        let mut buf = Vec::new();
+        buf.extend(make_variable_record("DEPTH", "M", Endian::Little));
+        buf.extend(make_variable_record("VELOCITY U", "M/S", Endian::Little));
+        buf.extend(make_variable_record("VELOCITY V", "M/S", Endian::Little));
+        let mut cursor = Cursor::new(buf);
+        let vars = read_variable_records(&mut cursor, Endian::Little, 3).unwrap();
+        assert_eq!(vars.len(), 3);
+        assert_eq!(vars[0].name, "DEPTH");
+        assert_eq!(vars[1].name, "VELOCITY U");
+        assert_eq!(vars[2].name, "VELOCITY V");
+    }
+
+    #[test]
+    fn read_variable_records_zero_count_returns_empty_vec() {
+        let mut cursor = Cursor::new(vec![]);
+        let vars = read_variable_records(&mut cursor, Endian::Little, 0).unwrap();
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn read_variable_records_trims_trailing_spaces() {
+        let buf = make_variable_record("DEPTH           ", "M               ", Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        let vars = read_variable_records(&mut cursor, Endian::Little, 1).unwrap();
+        assert_eq!(vars[0].name, "DEPTH");
+        assert_eq!(vars[0].unit, "M");
+    }
+
+    #[test]
+    fn read_variable_records_too_short_record_returns_error() {
+        // A record with only 16 bytes instead of the required 32
+        let payload = b"DEPTH           "; // only 16 bytes
+        let buf = make_record(payload, Endian::Little);
+        let mut cursor = Cursor::new(buf);
+        assert!(read_variable_records(&mut cursor, Endian::Little, 1).is_err());
+    }
+}
+
 // cSpell:ignore SELAFIND SELAPHIN nvar ncld KNOLG IPOBO vals
