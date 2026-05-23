@@ -8,6 +8,6 @@
 //! - data base
 //! - ...
 //!
-//! **Note**: Config files are managed in [config]
+//! **Note**: Config files are managed in [crate::config].
 
 pub mod selafin;

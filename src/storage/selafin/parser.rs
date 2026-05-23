@@ -9,6 +9,7 @@ use chrono::NaiveDateTime;
 use std::cmp::max;
 use std::io::{Read, Seek, SeekFrom};
 
+/// Indexes for IPARAM header array
 enum IParams {
     XOrigin = 2,
     YOrigin = 3,

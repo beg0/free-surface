@@ -32,14 +32,17 @@ pub enum SlfMesh {
 }
 #[derive(Debug)]
 pub struct Selafin {
-    pub title: String, // Title of the study
+    /// Title of the study
+    title: String,
 
-    //pub nvar: u32,
-    //pub varindex: [u32]
-    pub origin: (u32, u32), // (X,Y) coordinate of origin
+    /// (X,Y) coordinate of origin
+    pub origin: (u32, u32),
 
-    pub boundaries_count: u32, // Number of boundaries (for parallel computation)
-    pub interfaces_count: u32, // Number of interfaces (for parallel computation)
+    /// Number of boundaries (for parallel computation)
+    pub boundaries_count: u32,
+
+    /// Number of interfaces (for parallel computation)
+    pub interfaces_count: u32,
 
     pub nelem2: u32,
     pub npoin2: u32,
@@ -47,16 +50,35 @@ pub struct Selafin {
     pub ikle2: Vec<u32>,
     pub ipob2: Vec<i32>,
 
-    pub nelem3: u32,
-    pub npoin3: u32,
-    pub npd3: u32,
-    pub nplan: u32, // Number of planes (3D computation)
-    pub ikle3: Vec<u32>,
-    pub ipob3: Vec<i32>,
+    nelem3: u32,
+    npoin3: u32,
 
-    pub var: Vec<SlfVariable>, // Variables stored in history results
-    pub cld: Vec<SlfVariable>, // Variables stored in history results
-    pub mesh: SlfMesh,         // Geometry
+    /// Number of points per elements
+    /// Typically 3 in 2D and 6 in 3D
+    npd3: u32,
+
+    /// Number of planes (3D computation)
+    nplan: u32,
+
+    /// The connectivity table, size of 'nelem3' * 'npd3'
+    /// Indexes of nodes to connect each nodes together (0-based indexes)
+    ikle3: Vec<u32>,
+
+    /// Indexes of nodes at the boundary (0-based indexes)
+    /// The value of an element is 0 for an inner point and yields the edge
+    /// point numbers for the others),
+    ipob3: Vec<i32>,
+
+    /// Linear variables stored in history results
+    var: Vec<SlfVariable>,
+
+    /// Quadratic variables stored in history results
+    cld: Vec<SlfVariable>,
+
+    /// Coordinates of each points of the mesh
+    mesh: SlfMesh,
+
+    /// Date & time of creation of the Selafin
     pub datetime: NaiveDateTime,
 }
 
@@ -105,14 +127,17 @@ impl Default for Selafin {
 }
 
 impl Selafin {
+    /// Return total number of variable in Selafin file
     pub fn nbvar(&self) -> usize {
         self.var.len() + self.cld.len()
     }
 
+    /// Return number of linear variables
     pub fn nbvar1(&self) -> usize {
         self.var.len()
     }
 
+    /// Return number of quadratic variables
     pub fn nbvar2(&self) -> usize {
         self.cld.len()
     }
