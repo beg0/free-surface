@@ -9,12 +9,14 @@ pub mod container;
 mod geometry;
 mod parser;
 mod variable;
+mod writer;
 
 use chrono::NaiveDateTime;
 use geometry::SlfGeometry;
 use variable::{SlfVariable, TimeSerie};
 
 pub use parser::{parse, parse_file};
+pub use writer::{write, write_file};
 
 #[derive(Debug, Default)]
 pub struct Selafin {
