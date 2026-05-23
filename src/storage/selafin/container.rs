@@ -93,6 +93,15 @@ pub enum SlfArray2D {
     Double { x: Vec<f64>, y: Vec<f64> },
 }
 
+impl Default for SlfArray2D {
+    fn default() -> Self {
+        SlfArray2D::Float {
+            x: Vec::new(),
+            y: Vec::new(),
+        }
+    }
+}
+
 impl SlfArray2D {
     #[allow(dead_code)]
     pub fn len(&self) -> usize {

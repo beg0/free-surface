@@ -15,7 +15,7 @@ use variable::{SlfVariable, TimeSerie};
 
 pub use parser::{parse, parse_file};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Selafin {
     /// Title of the study
     title: String,
@@ -58,35 +58,6 @@ pub struct Selafin {
 
     /// Date & time of creation of the Selafin
     pub datetime: Option<NaiveDateTime>,
-}
-
-impl Default for Selafin {
-    fn default() -> Self {
-        Selafin {
-            title: String::new(),
-
-            //pub nvar: u32,
-            //pub varindex: [u32]
-            origin: (0, 0),
-
-            boundaries_count: 0,
-            interfaces_count: 0,
-
-            npd3: 0,
-            nplan: 1,
-            mesh: vec![],
-            ipob3: vec![],
-
-            var: vec![],
-            cld: vec![],
-            points: SlfArray2D::Float {
-                x: vec![],
-                y: vec![],
-            },
-            datetime: None,
-            results: TimeSerie::default(),
-        }
-    }
 }
 
 impl Selafin {
