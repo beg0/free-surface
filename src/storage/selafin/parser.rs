@@ -3,12 +3,13 @@
 //! Parses the Selafin binary file format.
 //! Supports both big-endian and little-endian files, and both f32 and f64 meshes.
 
-use super::container::{FloatSize, SlfArray2D};
-use super::variable::SlfVariable;
+use super::container::{FloatSize, SlfArray1D, SlfArray2D};
+use super::variable::{SlfVariable, TimeSerie, VariableEvolution};
 use super::Selafin;
 use binrw::{BinReaderExt, Endian};
 use chrono::NaiveDateTime;
 use std::cmp::max;
+use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 
 /// Indexes for IPARAM header array
@@ -126,6 +127,27 @@ fn read_f64s(data: &[u8], endian: Endian) -> Vec<f64> {
             }
         })
         .collect()
+}
+
+trait MultipleReader: Sized {
+    fn vec_from_bytes_endian(data: &[u8], endian: Endian) -> Vec<Self>;
+}
+
+impl MultipleReader for u32 {
+    fn vec_from_bytes_endian(data: &[u8], endian: Endian) -> Vec<Self> {
+        read_u32s(data, endian)
+    }
+}
+
+impl MultipleReader for f32 {
+    fn vec_from_bytes_endian(data: &[u8], endian: Endian) -> Vec<Self> {
+        read_f32s(data, endian)
+    }
+}
+impl MultipleReader for f64 {
+    fn vec_from_bytes_endian(data: &[u8], endian: Endian) -> Vec<Self> {
+        read_f64s(data, endian)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -419,16 +441,32 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // Uncomment the block below to collect all time-step data eagerly.
     // -----------------------------------------------------------------------
     //
-    // let nvar_total = slf.nbvar();
-    // loop {
-    //     read_record(&mut reader, endian)
-    //     match read_record(&mut reader, endian) {
-    //         Ok(data) => { /* store according to float_size */ }
-    //         Err(_) => break, // EOF or short record → done
-    //     }
-    // }
+
+    slf.results = match float_size {
+        FloatSize::F32 => {
+            read_history::<f32, R>(&mut reader, &slf.var, &slf.cld, slf.npoin3, endian)
+        }
+        FloatSize::F64 => {
+            read_history::<f64, R>(&mut reader, &slf.var, &slf.cld, slf.npoin3, endian)
+        }
+    }?;
 
     Ok(slf)
+}
+
+/// Return the number of bytes until end of file
+///
+fn remaining_file_size<R: Seek + ?Sized>(reader: &mut R) -> std::io::Result<u64> {
+    let old_pos = reader.stream_position()?;
+    let len = reader.seek(SeekFrom::End(0))?;
+
+    // Avoid seeking a third time when we were already at the end of the
+    // stream. The branch is usually way cheaper than a seek operation.
+    if old_pos != len {
+        reader.seek(SeekFrom::Start(old_pos))?;
+    }
+
+    Ok(len - old_pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -462,6 +500,103 @@ fn read_variable_records<R: Read + Seek>(
     Ok(vars)
 }
 
+fn read_history<T: MultipleReader + Default + Clone, R: Read + Seek>(
+    reader: &mut R,
+    var_defs: &Vec<SlfVariable>,
+    cld_defs: &Vec<SlfVariable>,
+    npoin3: usize,
+    endian: Endian,
+) -> binrw::BinResult<TimeSerie>
+where
+    SlfArray1D: From<Vec<T>>,
+{
+    type PointValues<T> = Vec<T>; // Will become the SlfArray1D when transformed with .into()
+
+    let nb_var = var_defs.len() + cld_defs.len();
+
+    if nb_var == 0 {
+        return Ok(TimeSerie::default());
+    }
+
+    let mut all_var_defs: Vec<&SlfVariable> = Vec::with_capacity(nb_var);
+
+    for var_def in var_defs {
+        all_var_defs.push(var_def)
+    }
+
+    for cld_def in cld_defs {
+        all_var_defs.push(cld_def)
+    }
+
+    let rem_size = remaining_file_size(reader)? as usize;
+    let size_time_record = 4 + size_of::<T>() + 4;
+    let size_vars_records = 4 + npoin3 * size_of::<T>() + 4;
+    let size_per_time_step = size_time_record + nb_var * size_vars_records;
+
+    let history_size = rem_size / size_per_time_step;
+
+    if history_size == 0 {
+        return Ok(TimeSerie::default());
+    }
+
+    let mut time: Vec<T> = Vec::with_capacity(history_size);
+
+    let mut values_all_var: Vec<Vec<PointValues<T>>> =
+        vec![Vec::<PointValues::<T>>::with_capacity(history_size); nb_var];
+
+    for time_idx in 0..history_size {
+        let time_data = read_record(reader, endian)?;
+        let t = T::vec_from_bytes_endian(&time_data, endian);
+        if t.is_empty() {
+            return Err(binrw::Error::AssertFail {
+                pos: reader.stream_position()?,
+                message: format!("Time entry for history #{} is empty", time_idx),
+            });
+        }
+
+        let mut all_values_for_current_time: Vec<PointValues<T>> = Vec::with_capacity(nb_var);
+
+        for var_def in &all_var_defs {
+            let var_data = read_record(reader, endian)?;
+            let var_values = T::vec_from_bytes_endian(&var_data, endian);
+
+            if var_values.len() != npoin3 {
+                return Err(binrw::Error::AssertFail {
+                    pos: reader.stream_position()?,
+                    message: format!(
+                        "values of Variable '{}' value records for history entry #{} has {} values, expected {}",
+                        var_def.name,
+                        time_idx,
+                        var_values.len(),
+                        npoin3
+                    ),
+                });
+            }
+
+            all_values_for_current_time.push(var_values);
+        }
+
+        time.push(t.first().cloned().unwrap_or_default());
+
+        for (dst, src) in std::iter::zip(&mut values_all_var, all_values_for_current_time) {
+            dst.push(src);
+        }
+    }
+
+    let mut vars: HashMap<String, VariableEvolution> = HashMap::with_capacity(nb_var);
+
+    for (var_def, values) in std::iter::zip(all_var_defs, values_all_var) {
+        let name = var_def.name.clone();
+        let ve = VariableEvolution {
+            var: var_def.clone(),
+            values: values.into_iter().map(|v| v.into()).collect(),
+        };
+
+        vars.insert(name, ve);
+    }
+
+    Ok(TimeSerie::new(time.into(), vars))
+}
 // ---------------------------------------------------------------------------
 // Re-export a convenience function that opens a file by path
 // ---------------------------------------------------------------------------

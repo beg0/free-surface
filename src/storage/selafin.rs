@@ -11,7 +11,7 @@ mod variable;
 
 use chrono::NaiveDateTime;
 use container::SlfArray2D;
-use variable::SlfVariable;
+use variable::{SlfVariable, TimeSerie};
 
 pub use parser::{parse, parse_file};
 
@@ -57,6 +57,8 @@ pub struct Selafin {
     /// Coordinates of each points of the mesh
     points: SlfArray2D,
 
+    results: TimeSerie,
+
     /// Date & time of creation of the Selafin
     pub datetime: Option<NaiveDateTime>,
 }
@@ -87,6 +89,7 @@ impl Default for Selafin {
                 y: vec![],
             },
             datetime: None,
+            results: TimeSerie::default(),
         }
     }
 }
@@ -236,6 +239,10 @@ impl Selafin {
     /// Return all elements of the selafin
     pub fn ipob3<const N: usize>(&self) -> Option<&[u32; N]> {
         self.ipob3.as_array()
+    }
+
+    pub fn results(&self) -> &TimeSerie {
+        &self.results
     }
 }
 
