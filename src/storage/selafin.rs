@@ -29,9 +29,6 @@ pub struct Selafin {
     /// Number of interfaces (for parallel computation)
     pub interfaces_count: u32,
 
-    nelem3: usize,
-    npoin3: usize,
-
     /// Number of points per elements
     /// Typically 3 in 2D and 6 in 3D
     npd3: usize,
@@ -75,8 +72,6 @@ impl Default for Selafin {
             boundaries_count: 0,
             interfaces_count: 0,
 
-            nelem3: 0,
-            npoin3: 0,
             npd3: 0,
             nplan: 1,
             mesh: vec![],
@@ -165,11 +160,12 @@ impl Selafin {
     /// For 3D Selafin, this is the total number of elements ([self.elements_count]) divided by the number of
     /// layer as there is the same number of element for each layer.
     pub fn elements_per_layer(&self) -> usize {
+        let nelem3 = self.mesh.len();
         if self.nplan > 1 {
             // The number of points is the same for every layer (regular mesh)
-            self.nelem3 / (self.nplan as usize - 1)
+            nelem3 / (self.nplan as usize - 1)
         } else {
-            self.nelem3
+            nelem3
         }
     }
 
@@ -180,7 +176,7 @@ impl Selafin {
 
     /// Total number of element (triangular or prism) or  in the mesh
     pub fn elements_count(&self) -> usize {
-        self.nelem3
+        self.mesh.len()
     }
 
     /// Number of points per element on a layer

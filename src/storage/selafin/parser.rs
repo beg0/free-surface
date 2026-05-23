@@ -251,6 +251,8 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     let endian = detect_endianness(&mut reader)?;
 
     let mut slf = Selafin::default();
+    let nelem3: usize;
+    let npoin3: usize;
 
     // -----------------------------------------------------------------------
     // 2. Metadata
@@ -335,8 +337,8 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 message: format!("Geometry integer header has only {} values", vals.len()),
             });
         }
-        slf.nelem3 = vals[0] as usize;
-        slf.npoin3 = vals[1] as usize;
+        nelem3 = vals[0] as usize;
+        npoin3 = vals[1] as usize;
         slf.npd3 = vals[2] as usize;
         slf.nplan = max(vals[3], 1);
 
@@ -354,7 +356,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
 
     // 2.2 - ikle3 (nelem3 × npd3 connectivity table)
     {
-        let expected = slf.nelem3 * slf.npd3;
+        let expected = nelem3 * slf.npd3;
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() != expected {
@@ -373,7 +375,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // 2.3 - ipob3 (npoin3 boundary codes)
     // TODO: if iparams[7] or iparams[8] != 0, then it's KNOLG and not IPOBO
     {
-        let expected = slf.npoin3;
+        let expected = npoin3;
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() != expected {
@@ -399,7 +401,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // -----------------------------------------------------------------------
     // 4. Geometry - float mesh (detect f32 vs f64 here)
     // -----------------------------------------------------------------------
-    let float_size = detect_float_size(&mut reader, endian, slf.npoin3)?;
+    let float_size = detect_float_size(&mut reader, endian, npoin3)?;
 
     let x_coords_data = read_record(&mut reader, endian)?;
     let y_coords_data = read_record(&mut reader, endian)?;
@@ -422,13 +424,13 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
 
     // Make sure x & y has the same length! Later (in slf.points_count())
     // we are only relying on the size of 'x' vector
-    if (x_len != slf.npoin3) || (y_len != slf.npoin3) {
+    if (x_len != npoin3) || (y_len != npoin3) {
         return Err(binrw::Error::AssertFail {
             pos: reader.stream_position()?,
             message: format!(
                 "Inconsistent number of points.
                 Header says {} points, x record says {} points, y records says {}",
-                slf.npoin3, x_len, y_len,
+                npoin3, x_len, y_len,
             ),
         });
     }
@@ -443,12 +445,8 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     //
 
     slf.results = match float_size {
-        FloatSize::F32 => {
-            read_history::<f32, R>(&mut reader, &slf.var, &slf.cld, slf.npoin3, endian)
-        }
-        FloatSize::F64 => {
-            read_history::<f64, R>(&mut reader, &slf.var, &slf.cld, slf.npoin3, endian)
-        }
+        FloatSize::F32 => read_history::<f32, R>(&mut reader, &slf.var, &slf.cld, npoin3, endian),
+        FloatSize::F64 => read_history::<f64, R>(&mut reader, &slf.var, &slf.cld, npoin3, endian),
     }?;
 
     Ok(slf)
