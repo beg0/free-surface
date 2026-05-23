@@ -4,6 +4,7 @@
 //! Supports both big-endian and little-endian files, and both f32 and f64 meshes.
 
 use super::container::{FloatSize, SlfArray1D, SlfArray2D};
+use super::geometry::SlfGeometry;
 use super::variable::{SlfVariable, TimeSerie, VariableEvolution};
 use super::Selafin;
 use binrw::{BinReaderExt, Endian};
@@ -250,16 +251,12 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // -----------------------------------------------------------------------
     let endian = detect_endianness(&mut reader)?;
 
-    let mut slf = Selafin::default();
-    let nelem3: usize;
-    let npoin3: usize;
-
     // -----------------------------------------------------------------------
     // 2. Metadata
     // -----------------------------------------------------------------------
 
     // 1.1 - Title (80-character string)
-    {
+    let title = {
         let data = read_record(&mut reader, endian)?;
         if data.len() < 80 {
             return Err(binrw::Error::AssertFail {
@@ -267,8 +264,8 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 message: format!("Title record too short: {} bytes", data.len()),
             });
         }
-        slf.title = ascii_record_to_string(&data[..80]);
-    }
+        ascii_record_to_string(&data[..80])
+    };
 
     // 1.2 - (nvar, ncld) tuple
     let (nvar, ncld) = {
@@ -284,33 +281,32 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     };
 
     // 1.3 - `var` entries (nvar records, each 32 bytes: 16-char name + 16-char unit)
-    slf.var = read_variable_records(&mut reader, endian, nvar)?;
+    let var = read_variable_records(&mut reader, endian, nvar)?;
 
     // 1.4 - `cld` entries
-    slf.cld = read_variable_records(&mut reader, endian, ncld)?;
+    let cld = read_variable_records(&mut reader, endian, ncld)?;
 
-    let iparams: Vec<u32>;
     // 1.5 - iparam (10 × i32)
-    {
+    let iparams = {
         let data = read_record(&mut reader, endian)?;
-        iparams = read_u32s(&data, endian);
-        if iparams.len() != 10 {
+        let vals = read_u32s(&data, endian);
+        if vals.len() != 10 {
             return Err(binrw::Error::AssertFail {
                 pos: reader.stream_position()?,
-                message: format!("iparam record has {} values, expected 10", iparams.len()),
+                message: format!("iparam record has {} values, expected 10", vals.len()),
             });
         }
-        //slf.iparam.copy_from_slice(&iparams[..10]);
-    }
-    slf.origin = (
+        vals
+    };
+
+    // 1.5.1 - origin point
+    let origin = (
         iparams[IParams::XOrigin as usize],
         iparams[IParams::YOrigin as usize],
     );
-    slf.boundaries_count = iparams[IParams::BoundariesCnt as usize];
-    slf.interfaces_count = iparams[IParams::IfaceCnt as usize];
 
     // 1.6 - Optional datetime record when iparam[9] == 1
-    if iparams[IParams::HasDateTime as usize] == 1 {
+    let datetime = if iparams[IParams::HasDateTime as usize] == 1 {
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() < 6 {
@@ -320,15 +316,17 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
             });
         }
 
-        slf.datetime = Some(parse_datetime(&vals[..6], reader.stream_position()?)?);
-    }
+        Some(parse_datetime(&vals[..6], reader.stream_position()?)?)
+    } else {
+        None
+    };
 
     // -----------------------------------------------------------------------
     // 3. Geometry - integer elements
     // -----------------------------------------------------------------------
 
     // 2.1 - (nelem3, npoin3, npd3, nplan)
-    {
+    let (nelem3, npoin3, npd3, nplan) = {
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() < 4 {
@@ -337,26 +335,26 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 message: format!("Geometry integer header has only {} values", vals.len()),
             });
         }
-        nelem3 = vals[0] as usize;
-        npoin3 = vals[1] as usize;
-        slf.npd3 = vals[2] as usize;
-        slf.nplan = max(vals[3], 1);
 
-        if slf.nplan != max(iparams[IParams::PlanesCnt as usize], 1) {
+        let nplan = max(vals[3], 1);
+
+        if nplan != max(iparams[IParams::PlanesCnt as usize], 1) {
             return Err(binrw::Error::AssertFail {
                 pos: reader.stream_position()?,
                 message: format!(
                     "Inconsistent number of planes, IPARAMS says {}, Geometry says {}",
                     iparams[IParams::PlanesCnt as usize],
-                    slf.nplan
+                    nplan
                 ),
             });
         }
-    }
+
+        (vals[0] as usize, vals[1] as usize, vals[2] as usize, nplan)
+    };
 
     // 2.2 - ikle3 (nelem3 × npd3 connectivity table)
-    {
-        let expected = nelem3 * slf.npd3;
+    let mesh = {
+        let expected = nelem3 * npd3;
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() != expected {
@@ -369,12 +367,12 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 ),
             });
         }
-        slf.mesh = vals.iter().map(|v| v - 1).collect();
-    }
+        vals.iter().map(|v| v - 1).collect()
+    };
 
     // 2.3 - ipob3 (npoin3 boundary codes)
     // TODO: if iparams[7] or iparams[8] != 0, then it's KNOLG and not IPOBO
-    {
+    let ipob3 = {
         let expected = npoin3;
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
@@ -392,11 +390,10 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         // Values in Slf files are 1-based indexes where '0' means invalid value
         // (e.g. inner node in that case)
         // Let's remove invalid value and make the indexes 0-based
-        slf.ipob3 = vals
-            .iter()
+        vals.iter()
             .filter_map(|v| if *v == 0 { None } else { Some(*v - 1) })
-            .collect();
-    }
+            .collect()
+    };
 
     // -----------------------------------------------------------------------
     // 4. Geometry - float mesh (detect f32 vs f64 here)
@@ -406,7 +403,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     let x_coords_data = read_record(&mut reader, endian)?;
     let y_coords_data = read_record(&mut reader, endian)?;
 
-    slf.points = match float_size {
+    let points = match float_size {
         FloatSize::F32 => SlfArray2D::Float {
             x: read_f32s(&x_coords_data, endian),
             y: read_f32s(&y_coords_data, endian),
@@ -417,7 +414,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         },
     };
 
-    let (x_len, y_len) = match &slf.points {
+    let (x_len, y_len) = match &points {
         SlfArray2D::Float { x, y } => (x.len(), y.len()),
         SlfArray2D::Double { x, y } => (x.len(), y.len()),
     };
@@ -435,6 +432,11 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         });
     }
 
+    let geo = SlfGeometry::new(points, ipob3, mesh, npd3, nplan).with_parallel_info(
+        iparams[IParams::BoundariesCnt as usize],
+        iparams[IParams::IfaceCnt as usize],
+    );
+
     // -----------------------------------------------------------------------
     // 5. Optional time history (remaining records, each npoin3 floats)
     //
@@ -444,12 +446,20 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // -----------------------------------------------------------------------
     //
 
-    slf.results = match float_size {
-        FloatSize::F32 => read_history::<f32, R>(&mut reader, &slf.var, &slf.cld, npoin3, endian),
-        FloatSize::F64 => read_history::<f64, R>(&mut reader, &slf.var, &slf.cld, npoin3, endian),
+    let results = match float_size {
+        FloatSize::F32 => read_history::<f32, R>(&mut reader, &var, &cld, npoin3, endian),
+        FloatSize::F64 => read_history::<f64, R>(&mut reader, &var, &cld, npoin3, endian),
     }?;
 
-    Ok(slf)
+    Ok(Selafin {
+        title,
+        origin,
+        geo,
+        var,
+        cld,
+        results,
+        datetime,
+    })
 }
 
 /// Return the number of bytes until end of file
