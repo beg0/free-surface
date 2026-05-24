@@ -116,8 +116,16 @@ fn write_title<W: Write>(w: &mut W, slf: &Selafin, endian: Endian) -> Result<()>
         SlfArray2D::Float { .. } => b"SERAFIN ",
         SlfArray2D::Double { .. } => b"SERAFIND",
     };
-    let mut payload = fixed_str(slf.title(), 80);
-    payload.extend_from_slice(float_tag);
+
+    let title = slf.title();
+    let payload = if title.len() <= 72 {
+        let mut padded = fixed_str(title, 72);
+        padded.extend_from_slice(float_tag);
+        padded
+    } else {
+        fixed_str(title, 80)
+    };
+
     write_record(w, &payload, endian)
 }
 

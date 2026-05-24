@@ -9,6 +9,7 @@ use super::variable::{SlfVariable, TimeSerie, VariableEvolution};
 use super::Selafin;
 use binrw::{BinReaderExt, Endian};
 use chrono::NaiveDateTime;
+use regex::RegexBuilder;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
@@ -264,7 +265,16 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
                 message: format!("Title record too short: {} bytes", data.len()),
             });
         }
-        ascii_record_to_string(&data[..80])
+
+        let stringified = ascii_record_to_string(&data[..80]);
+
+        // Try to remove the "SELAFIN"/"SELAFIND" tag at end (sometime spelled
+        // SELAPHIN (with "PH" instead of "F") of SERAFIN (with "R" instead of "L"))
+        let suffix_re = RegexBuilder::new(r"\s*SE(?:L|R)A(?:F|PH)IN(?:D| )?$")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        suffix_re.replace(stringified.as_str(), "").to_string()
     };
 
     // 1.2 - (nvar, ncld) tuple
