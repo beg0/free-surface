@@ -130,6 +130,31 @@ impl SlfArray2D {
             }
         }
     }
+
+    /// Convert a SlfArray2D into a pair of Vec<f64>
+    ///
+    /// Do not consume the SlfArray2D
+    pub fn to_vec(&self) -> (Vec<f64>, Vec<f64>) {
+        match self {
+            SlfArray2D::Float { x, y } => (
+                x.iter().map(|&v| v as f64).collect(),
+                y.iter().map(|&v| v as f64).collect(),
+            ),
+            SlfArray2D::Double { x, y } => (x.clone(), y.clone()),
+        }
+    }
+}
+
+impl From<SlfArray2D> for (Vec<f64>, Vec<f64>) {
+    fn from(value: SlfArray2D) -> Self {
+        match value {
+            SlfArray2D::Float { x, y } => (
+                x.into_iter().map(|v| v as f64).collect(),
+                y.into_iter().map(|v| v as f64).collect(),
+            ),
+            SlfArray2D::Double { x, y } => (x, y),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -521,5 +546,41 @@ mod tests {
         } else {
             panic!("Expected Double variant");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Convertion
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn float_to_vec64() {
+        let a = float(vec![1.0, 2.0], vec![3.0, 4.0]);
+        let (x, y) = a.to_vec();
+        assert_eq!(x, vec![1.0f64, 2.0]);
+        assert_eq!(y, vec![3.0f64, 4.0]);
+    }
+
+    #[test]
+    fn double_to_vec64() {
+        let a = double(vec![1.0, 2.0], vec![3.0, 4.0]);
+        let (x, y) = a.to_vec();
+        assert_eq!(x, vec![1.0f64, 2.0]);
+        assert_eq!(y, vec![3.0f64, 4.0]);
+    }
+
+    #[test]
+    fn float_into_vec64() {
+        let a = float(vec![1.0, 2.0], vec![3.0, 4.0]);
+        let (x, y) = a.into();
+        assert_eq!(x, vec![1.0f64, 2.0]);
+        assert_eq!(y, vec![3.0f64, 4.0]);
+    }
+
+    #[test]
+    fn double_into_vec64() {
+        let a = double(vec![1.0, 2.0], vec![3.0, 4.0]);
+        let (x, y) = a.into();
+        assert_eq!(x, vec![1.0f64, 2.0]);
+        assert_eq!(y, vec![3.0f64, 4.0]);
     }
 }
