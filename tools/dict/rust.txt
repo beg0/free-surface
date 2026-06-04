@@ -1,7 +1,10 @@
+anstream
+anstyle
 binrw
 clippy
 indoc
 isize
 rfind
 rustc
+serde
 thiserror
