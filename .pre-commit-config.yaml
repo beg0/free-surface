@@ -1,0 +1,25 @@
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.0.0
+    hooks:
+    -   id: check-yaml
+    -   id: trailing-whitespace
+    -   id: check-case-conflict
+    -   id: check-shebang-scripts-are-executable
+    -   id: check-added-large-files
+    -   id: end-of-file-fixer
+-   repo: https://github.com/FeryET/pre-commit-rust
+    rev: v1.2.1
+    hooks:
+    -   id: fmt
+    -   id: cargo-check
+    -   id: test
+    -   id: build
+        stages: [pre-push]
+    -   id: clippy
+-   repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+    -   id: conventional-pre-commit
+        stages: [commit-msg]
+        args: []
