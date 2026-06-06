@@ -22,13 +22,9 @@ jobs:
         with:
             toolchain: stable
             components: rustfmt, clippy
+      - name: Run pre-commit
+        uses: j178/prek-action@v2
       - name: Run cargo check (all features)
         run: cargo check --tests --all-features
-      - name: Run cargo clippy
-        run: cargo clippy  -- -D warnings
-      - name: Run cargo fmt
-        run: cargo fmt --check
-      - name: Run cargo test
-        run: cargo test --all-features
       - name: Run cargo doc
         run: cargo doc --all-features
