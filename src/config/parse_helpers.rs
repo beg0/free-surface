@@ -31,6 +31,15 @@ pub fn unquote_single(s: &str) -> String {
 ///   - Single precision exponent:  3.14E+2,  3.14E2,  3.14E-2
 ///   - Double precision exponent:  3.14D+2,  3.14D2,  3.14D-2
 ///   - No mantissa decimal: 314E-2, 314D-2
+///
+/// # Examples
+///
+/// ```rust
+/// use free_surface::config::parse_helpers::parse_fortran_float;
+///
+/// assert_eq!(parse_fortran_float("0.31415E+1").unwrap(), 3.1415);
+/// assert_eq!(parse_fortran_float("114.42D-2").unwrap(), 1.1442);
+/// ```
 pub fn parse_fortran_float(s: &str) -> Result<f64, std::num::ParseFloatError> {
     // Normalize: replace FORTRAN double precision 'D'/'d' exponent marker with 'e'
     // and strip any explicit '+' from the exponent (Rust's parser handles +/- already)
