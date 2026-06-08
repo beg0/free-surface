@@ -4,6 +4,7 @@
 //! all keywords allowed
 //! for steering files (a.k.a "cas" file) for a given program (Telemac2D,
 //! Telemac3D, Artemis, Tomawac...)
+
 use super::configvalue::{parse_single_value_2, parse_value_2, ConfigValue, DicoType};
 use super::parse_helpers::unquote_single;
 use super::parse_helpers::{
@@ -11,6 +12,11 @@ use super::parse_helpers::{
 };
 use super::textloc::TextLoc;
 use std::collections::HashMap;
+use std::fmt;
+use std::rc::Rc;
+
+/// Possibles locales in a Dico file
+const LOCALES: [&str; 2] = ["en", "fr"];
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GuiControl {
@@ -108,8 +114,12 @@ pub enum DicoParseError {
     //     choices2: Vec<ConfigValue>,
     //     pos: TextLoc,
     // },
-    #[error("{pos}: Inconsistent options between choices for different languages.")]
-    InconsistentChoiceOption { pos: TextLoc },
+    #[error("{pos}: Inconsistent options between choices for different languages. Got {cnt1} and {cnt2} options.")]
+    InconsistentChoiceOption {
+        pos: TextLoc,
+        cnt1: usize,
+        cnt2: usize,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -128,13 +138,97 @@ struct BlockParseInfo {
     pos: TextLoc,
 }
 
-pub type Dico = Vec<DicoKeyword>;
+// All keywords for a given locale, indexed by their (normalized) name
+type DicoInner = HashMap<String, Rc<DicoKeyword>>;
+
+/// Telemac's Dico - all possible keyword (in every language) allowed in a steering file
+///
+/// The content of the dico depend on which Telemac program is run (Telemac2D,
+/// Telemac3D, Artemis, Tomawac...).
+///
+/// Dico can created with [parse_dico].
+pub struct Dico {
+    /// Each keywords, indexed per locale
+    per_locale: HashMap<String, DicoInner>,
+}
+
+fn normalize_keyword_name(name: &str) -> String {
+    name.trim().to_uppercase()
+}
+
+impl Dico {
+    pub fn get(&self, name: &str) -> Option<&DicoKeyword> {
+        let normalized_name = normalize_keyword_name(name);
+
+        for inner in self.per_locale.values() {
+            if let Some(keyword) = inner.get(&normalized_name) {
+                return Some(keyword);
+            }
+        }
+        None
+    }
+
+    /// Iterator visiting all keywords of the dico
+    ///
+    pub fn iter<'a>(&'a self) -> Iter<'a> {
+        let base = self.per_locale.get(LOCALES[0]).unwrap();
+        let iter = base.iter();
+        Iter {
+            //base,
+            iter,
+        }
+    }
+}
+
+impl fmt::Debug for Dico {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let locales: Vec<&String> = self.per_locale.keys().collect();
+        let first_locale = self.per_locale.get(LOCALES[0]).unwrap();
+
+        f.debug_struct("Dico")
+            .field("locales", &locales)
+            .field("keywords", &first_locale)
+            .finish()
+    }
+}
+
+pub struct Iter<'a> {
+    //  base: &'a DicoInner,
+    iter: std::collections::hash_map::Iter<'a, String, Rc<DicoKeyword>>,
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = (&'a String, &'a DicoKeyword);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (key, val) = self.iter.next()?;
+        Some((key, val))
+    }
+}
+
+fn all_equals<T: Iterator>(mut iter: T) -> Result<T::Item, (T::Item, T::Item)>
+where
+    T::Item: Eq + Default,
+{
+    let first = iter.next();
+    if let Some(first_value) = first {
+        iter.try_fold(first_value, |prev, new| {
+            if prev == new {
+                Ok(prev)
+            } else {
+                Err((prev, new))
+            }
+        })
+    } else {
+        Ok(T::Item::default())
+    }
+}
 
 pub fn parse_dico(input: &str, filename: &str) -> Result<Dico, VecErrorPtr> {
     let file_pos = TextLoc::from((filename, 0));
 
     let blocks = split_into_blocks(input, &file_pos);
-    let mut keywords: Dico = Vec::new();
+    let mut keywords: Vec<Rc<DicoKeyword>> = Vec::new();
     let mut errors: VecErrorPtr = Vec::new();
 
     for block in blocks {
@@ -142,13 +236,31 @@ pub fn parse_dico(input: &str, filename: &str) -> Result<Dico, VecErrorPtr> {
             continue;
         }
         match parse_block(&block.val, &block.pos) {
-            Ok(kw) => keywords.push(kw),
-            Err(mut errs) => errors.append(&mut errs),
+            Ok(kw) => {
+                keywords.push(Rc::new(kw));
+            }
+            Err(mut errs) => {
+                errors.append(&mut errs);
+            }
         }
     }
 
+    let mut per_locale: HashMap<String, DicoInner> = HashMap::with_capacity(LOCALES.len());
+
+    for locale in LOCALES {
+        let locale = locale.to_owned();
+        let mut inner: DicoInner = HashMap::with_capacity(keywords.len());
+        for kw in &keywords {
+            if let Some(desc) = kw.text_desc.get(&locale) {
+                inner.insert(desc.name.clone(), kw.clone());
+            }
+        }
+
+        per_locale.insert(locale.to_owned(), inner);
+    }
+
     if errors.is_empty() {
-        Ok(keywords)
+        Ok(Dico { per_locale })
     } else {
         Err(errors)
     }
@@ -302,7 +414,7 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     let french_names = ("NOM", "AIDE", "DEFAUT", "CHOIX", "RUBRIQUE");
     let english_names = ("NOM1", "AIDE1", "DEFAUT1", "CHOIX1", "RUBRIQUE1");
 
-    for (locale, names) in [("fr", french_names), ("en", english_names)] {
+    for (locale, names) in [(LOCALES[1], french_names), (LOCALES[0], english_names)] {
         let name = require_one(names.0, &mut errors);
         let help = get_val_one(names.1, &mut errors).unwrap_or_default();
         let kpi_defaults = fields.get(names.2);
@@ -415,19 +527,21 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     let controle = get_n("CONTROLE", 2, &mut errors)
         .and_then(|infos| parse_controle(&infos[0], &infos[1], &mut errors));
 
-    // FIXME: we check here that both english & french "CHOIX" expose
-    // the same options. We need to make this code more generic to handle other langages
-    let choices_cnt_fr = text_desc
-        .get("fr")
-        .map_or(0, |desc| desc.choices_help.len());
-    let choices_cnt_en = text_desc
-        .get("en")
-        .map_or(0, |desc| desc.choices_help.len());
+    let choices_cnt = LOCALES.iter().map(|locale| {
+        text_desc
+            .get(locale.to_owned())
+            .map_or(0, |desc| desc.choices_help.len())
+    });
 
-    if choices_cnt_fr != choices_cnt_en {
-        errors.push(Box::new(DicoParseError::InconsistentChoiceOption {
-            pos: block_pos.clone(),
-        }));
+    match all_equals(choices_cnt) {
+        Ok(_) => {}
+        Err((cnt1, cnt2)) => {
+            errors.push(Box::new(DicoParseError::InconsistentChoiceOption {
+                pos: block_pos.clone(),
+                cnt1,
+                cnt2,
+            }));
+        }
     }
 
     if !errors.is_empty() {
@@ -542,7 +656,7 @@ impl<'a> DamoclesParser for DicoFieldParser<'a> {
     }
 
     fn new_field(&mut self, kpi: KeywordParseInfo) {
-        let key_upper = kpi.keyname().to_uppercase();
+        let key_upper = normalize_keyword_name(kpi.keyname());
         if self.known_keys.contains(&key_upper.as_str()) {
             self.fields.insert(key_upper, kpi);
         } else {
@@ -672,13 +786,13 @@ impl DicoKeyword {
     pub fn name(&self) -> &String {
         &self
             .text_desc
-            .get("en")
+            .get(LOCALES[0])
             .expect("No english description")
             .name
     }
 
     pub fn default(&self) -> ConfigValue {
-        let text_desc = &self.text_desc.get("en");
+        let text_desc = &self.text_desc.get(LOCALES[0]);
 
         let default_generator = || {
             if self.nargs == 1 {
@@ -781,7 +895,7 @@ impl DicoKeyword {
             let upper_value: ConfigValue;
             let normalized_value: &ConfigValue;
             if let ConfigValue::String(s) = value {
-                upper_value = ConfigValue::String(s.to_uppercase().trim().to_string());
+                upper_value = ConfigValue::String(normalize_keyword_name(s));
                 normalized_value = &upper_value;
             } else {
                 normalized_value = value;
@@ -805,7 +919,7 @@ impl DicoKeyword {
             Some(pos) => {
                 let english_desc = self
                     .text_desc
-                    .get("en")
+                    .get(LOCALES[0])
                     .expect("No 'en' text description in keyword");
 
                 let english_option_help = english_desc
