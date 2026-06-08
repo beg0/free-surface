@@ -4,10 +4,12 @@
 
 use serde_json::value::Value as JsonValue;
 
+mod damocles;
 mod human;
 mod json;
 mod porcelain;
 
+pub use damocles::DamoclesConfigViewer;
 pub use human::HumanConfigViewer;
 pub use json::JsonConfigViewer;
 pub use porcelain::PorcelainConfigViewer;
