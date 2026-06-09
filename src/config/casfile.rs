@@ -134,8 +134,24 @@ impl<'a> Parser<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn config_from(&self, input: &str) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
+    pub fn config_from_content(
+        &self,
+        input: &str,
+    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         let mut config = self.parse(input)?;
+
+        self.fill_missing_fields(&mut config);
+        Ok(config)
+    }
+
+    /// Load a config from a steering file
+    ///
+    /// Get the full config from a steering file.
+    pub fn config_from_file(
+        &self,
+        filename: &String,
+    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
+        let mut config = self.parse_from_file(filename)?;
 
         self.fill_missing_fields(&mut config);
         Ok(config)

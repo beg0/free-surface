@@ -22,6 +22,10 @@ struct Args {
     /// Print the explicitly-set config values after a successful parse
     #[arg(long)]
     dump: bool,
+
+    /// Print all config values (including defaults) after a successful parse
+    #[arg(long)]
+    full_dump: bool,
 }
 
 /// A thin wrapper so we can collect heterogeneous errors into one list.
@@ -50,9 +54,13 @@ fn run(args: &Args) -> Result<(), Errors> {
     let dico = load_dico(&args.dico)?;
     let parser = config::casfile::Parser::new(&dico);
 
-    let config = parser.parse_from_file(&args.config)?;
+    let config = if args.full_dump {
+        parser.config_from_file(&args.config)
+    } else {
+        parser.parse_from_file(&args.config)
+    }?;
 
-    if args.dump {
+    if args.dump || args.full_dump {
         dump_config(&config);
     }
 
