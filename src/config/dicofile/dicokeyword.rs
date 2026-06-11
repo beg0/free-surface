@@ -29,7 +29,6 @@ pub struct KeywordTextDescription {
     pub choices_help: Vec<ChoiceOptionHelp>, // Help text for each possible values
     pub default_val: Option<ConfigValue>,    // Default value
 
-    #[allow(dead_code)]
     pub classification: [String; 3], // Classification, 3 levels
 
     #[allow(dead_code)]
