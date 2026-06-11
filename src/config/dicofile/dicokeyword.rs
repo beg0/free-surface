@@ -63,11 +63,13 @@ pub struct DicoKeyword {
 
 impl DicoKeyword {
     pub fn name(&self) -> &String {
-        &self
-            .text_desc
+        &self.default_text_desc().name
+    }
+
+    pub fn default_text_desc(&self) -> &KeywordTextDescription {
+        self.text_desc
             .get(LOCALES[0])
             .expect("No english description")
-            .name
     }
 
     pub fn default(&self) -> ConfigValue {
