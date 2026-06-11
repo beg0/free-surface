@@ -391,6 +391,24 @@ impl From<Vec<f64>> for ConfigValue {
     }
 }
 
+impl TryFrom<&ConfigValue> for serde_json::Value {
+    type Error = serde_json::Error;
+    fn try_from(value: &ConfigValue) -> Result<Self, Self::Error> {
+        match value {
+            ConfigValue::String(val) => serde_json::to_value(val),
+            ConfigValue::Path(val) => serde_json::to_value(val),
+            ConfigValue::Boolean(val) => serde_json::to_value(val),
+            ConfigValue::Integer(val) => serde_json::to_value(val),
+            ConfigValue::Float(val) => serde_json::to_value(val),
+            ConfigValue::StringCollection(val) => serde_json::to_value(val),
+            ConfigValue::PathCollection(val) => serde_json::to_value(val),
+            ConfigValue::BooleanCollection(val) => serde_json::to_value(val),
+            ConfigValue::IntegerCollection(val) => serde_json::to_value(val),
+            ConfigValue::FloatCollection(val) => serde_json::to_value(val),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
