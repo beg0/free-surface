@@ -61,31 +61,21 @@ pub enum ParseError {
 type ErrorPtr = Box<dyn std::error::Error>;
 type VecErrorPtr = Vec<ErrorPtr>;
 
-pub struct Parser<'dico> {
+pub struct Parser<'a> {
     /// Map of normalized (uppercase) key -> expected type
-    dico: &'dico dicofile::Dico,
-    keywords: HashMap<&'dico String, &'dico dicofile::DicoKeyword>,
+    dico: &'a dicofile::Dico,
 }
 
-struct ParserInternal<'dico> {
-    keywords: &'dico HashMap<&'dico String, &'dico dicofile::DicoKeyword>,
+struct ParserInternal<'a> {
+    dico: &'a dicofile::Dico,
     top_pos: TextLoc,
     result: HashMap<String, ConfigValue>,
     errors: VecErrorPtr,
 }
 
-impl<'dico> Parser<'dico> {
-    pub fn new(dico: &'dico dicofile::Dico) -> Self {
-        let mut ret = Self {
-            dico,
-            keywords: HashMap::new(),
-        };
-        for keyword in ret.dico {
-            for desc in keyword.text_desc.values() {
-                ret.keywords.insert(&desc.name, keyword);
-            }
-        }
-        ret
+impl<'a> Parser<'a> {
+    pub fn new(dico: &'a dicofile::Dico) -> Self {
+        Self { dico }
     }
 
     /// Read a CAS file and parse it
@@ -121,7 +111,7 @@ impl<'dico> Parser<'dico> {
     ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         // trash previous results
         let mut internal = ParserInternal {
-            keywords: &self.keywords,
+            dico: self.dico,
             result: HashMap::new(),
             errors: Vec::new(),
             top_pos: TextLoc::from((filename, 1)),
@@ -136,8 +126,7 @@ impl<'dico> Parser<'dico> {
     }
 
     pub fn fill_missing_fields(&self, config: &mut HashMap<String, ConfigValue>) {
-        for keyword in self.dico {
-            let keyword_name = keyword.name();
+        for (keyword_name, keyword) in self.dico.iter() {
             if (keyword.level == 0) && !config.contains_key(keyword_name) {
                 config.insert(keyword_name.clone(), keyword.default());
             }
@@ -145,15 +134,31 @@ impl<'dico> Parser<'dico> {
     }
 
     #[allow(dead_code)]
-    pub fn config_from(&self, input: &str) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
+    pub fn config_from_content(
+        &self,
+        input: &str,
+    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         let mut config = self.parse(input)?;
+
+        self.fill_missing_fields(&mut config);
+        Ok(config)
+    }
+
+    /// Load a config from a steering file
+    ///
+    /// Get the full config from a steering file.
+    pub fn config_from_file(
+        &self,
+        filename: &String,
+    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
+        let mut config = self.parse_from_file(filename)?;
 
         self.fill_missing_fields(&mut config);
         Ok(config)
     }
 }
 
-impl<'dico> DamoclesParser for ParserInternal<'dico> {
+impl<'a> DamoclesParser for ParserInternal<'a> {
     fn error(&mut self, e: ErrorPtr) {
         self.errors.push(e);
     }
@@ -166,11 +171,11 @@ impl<'dico> DamoclesParser for ParserInternal<'dico> {
 
         match cmd.token[1..].to_ascii_uppercase().as_str() {
             "DYN" => {
-                //Ignored in sterring file
+                //Ignored in steering file
             }
             "LIS" => {
                 // Dump the dico
-                dbg!(&self.keywords);
+                dbg!(&self.dico);
             }
             "ETA" => {
                 // Dump the config file
@@ -208,7 +213,7 @@ impl<'dico> DamoclesParser for ParserInternal<'dico> {
     }
 
     fn new_field(&mut self, mut kpi: KeywordParseInfo) {
-        let Some(keyword) = self.keywords.get(&kpi.keyname().to_uppercase()) else {
+        let Some(keyword) = self.dico.get(kpi.keyname()) else {
             self.error(Box::new(ParseError::UnknownKey {
                 pos: kpi.key.start_pos.clone(),
                 key: kpi.key.token.clone(),

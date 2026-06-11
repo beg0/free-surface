@@ -1,6 +1,7 @@
 cascontent
 casfile
 dicofile
+dicokeyword
 iface
 nargs
 subdirs
