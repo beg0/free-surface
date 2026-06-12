@@ -8,6 +8,10 @@ use std::io::Write;
 pub struct DamoclesConfigViewer<W: Write> {
     writer: W,
     section_level: usize,
+
+    /// Was the last "emit" a call to "emit_kv"
+    /// If yes, and next call is a comment of a start of section, then add an extra blank line
+    last_is_kv: bool,
 }
 
 /// Convert a Json value to a damocles-compatible output
@@ -46,12 +50,15 @@ fn to_damocles_string(value: &JsonValue) -> String {
 
 impl<W: Write> ConfigViewer for DamoclesConfigViewer<W> {
     fn emit_kv(&mut self, key: &str, value: &JsonValue) {
+        self.last_is_kv = true;
         writeln!(self.writer, "{} = {}", key, to_damocles_string(value)).unwrap()
     }
     fn emit_table(&mut self, key: &str, headers: &[&str], rows: &[Vec<JsonValue>]) {
         let prefix_len = key.len() + 3; // +3 because of " = " after the key,
         let padding: String = " ".repeat(prefix_len);
         let column_cnt = headers.len();
+
+        self.last_is_kv = true;
 
         let rows_str: Vec<Vec<String>> = rows
             .iter()
@@ -107,6 +114,7 @@ impl<W: Write> ConfigViewer for DamoclesConfigViewer<W> {
     }
 
     fn emit_section_start(&mut self, name: &str) {
+        self.extra_blank_line().unwrap();
         self.section_level += 1;
 
         let upper_name = name.to_uppercase();
@@ -115,7 +123,6 @@ impl<W: Write> ConfigViewer for DamoclesConfigViewer<W> {
         // Thus just consider the first 3 levels
         match self.section_level {
             1 => {
-                writeln!(self.writer).unwrap();
                 writeln!(
                     self.writer,
                     "/----------------------------------------------------------------------/"
@@ -131,13 +138,11 @@ impl<W: Write> ConfigViewer for DamoclesConfigViewer<W> {
             }
             2 => {
                 let name_len = upper_name.len();
-                writeln!(self.writer).unwrap();
                 writeln!(self.writer, "/ {}", upper_name).unwrap();
                 writeln!(self.writer, "/{}", "-".repeat(name_len + 1)).unwrap();
                 writeln!(self.writer).unwrap();
             }
             _ => {
-                writeln!(self.writer).unwrap();
                 writeln!(self.writer, "/ {}", upper_name).unwrap();
                 writeln!(self.writer).unwrap();
             }
@@ -149,6 +154,7 @@ impl<W: Write> ConfigViewer for DamoclesConfigViewer<W> {
         self.section_level -= 1;
     }
     fn emit_comment(&mut self, comment: &str) {
+        self.extra_blank_line().unwrap();
         for line in comment.split("\n") {
             writeln!(self.writer, "/ {}", line).unwrap();
         }
@@ -163,6 +169,16 @@ impl<W: Write> DamoclesConfigViewer<W> {
         Self {
             writer,
             section_level: 0,
+            last_is_kv: false,
+        }
+    }
+
+    fn extra_blank_line(&mut self) -> std::io::Result<usize> {
+        if self.last_is_kv {
+            self.last_is_kv = false;
+            self.writer.write(b"\n")
+        } else {
+            Ok(0)
         }
     }
 }
