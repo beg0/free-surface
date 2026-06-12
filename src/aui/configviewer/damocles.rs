@@ -149,7 +149,9 @@ impl<W: Write> ConfigViewer for DamoclesConfigViewer<W> {
         self.section_level -= 1;
     }
     fn emit_comment(&mut self, comment: &str) {
-        writeln!(self.writer, "/ {}", comment).unwrap();
+        for line in comment.split("\n") {
+            writeln!(self.writer, "/ {}", line).unwrap();
+        }
     }
     fn finish(&mut self) {
         assert!(self.section_level == 0); // We shall have as many emit_section_start() as emit_section_end()

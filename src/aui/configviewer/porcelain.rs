@@ -54,7 +54,9 @@ impl<W: Write> ConfigViewer for PorcelainConfigViewer<W> {
         self.sections_title.pop();
     }
     fn emit_comment(&mut self, comment: &str) {
-        writeln!(self.writer, "# {}", comment).unwrap()
+        for line in comment.split("\n") {
+            writeln!(self.writer, "# {}", line).unwrap();
+        }
     }
     fn finish(&mut self) {}
 }
