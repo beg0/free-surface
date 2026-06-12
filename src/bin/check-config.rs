@@ -1,18 +1,31 @@
+use core::fmt;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::str::FromStr;
 
 use clap::Parser;
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
 use free_surface::aui::Format;
 use free_surface::config::configvalue::ConfigValue;
+use free_surface::config::dicofile::DicoKeyword;
 use free_surface::config::{self, dicofile::Dico};
 
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
+#[derive(Clone)]
+enum DocInfo {
+    Help,
+    ChoiceOptions,
+    DefaultValue,
+    //AlternateKeywordName,
+    Type,
+    Nargs,
+    Boundaries,
+}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -47,8 +60,33 @@ struct Args {
     /// Colorize the output
     #[arg(long, default_value_t=clap::ColorChoice::Auto)]
     color: clap::ColorChoice,
+
+    /// Show some documentation alongside each variable
+    ///
+    /// This only has an influence if --dump or --full-dump is used.
+    /// Furthermore, only some formatter (such as Damocles or Porcelain) handles this.
+    /// Json formatter does not handle that.
+    /// Supported value: help, choice_option, default_value, type, nargs, boundaries
+    #[arg(long, value_delimiter = ',')]
+    extra_doc: Vec<DocInfo>,
 }
 
+impl FromStr for DocInfo {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim().to_lowercase();
+        match s.as_str() {
+            "help" => Ok(DocInfo::Help),
+            "choice_options" => Ok(DocInfo::ChoiceOptions),
+            "default_value" => Ok(DocInfo::DefaultValue),
+            "type" => Ok(DocInfo::Type),
+            "nargs" => Ok(DocInfo::Nargs),
+            "boundaries" => Ok(DocInfo::Boundaries),
+            other => Err(format!("unknown extra-info '{other}'")),
+        }
+    }
+}
 // ---------------------------------------------------------------------------
 // Error management helpers
 // ---------------------------------------------------------------------------
@@ -80,6 +118,7 @@ enum SectionEntry<'a> {
     ConfigValue {
         name: String,
         value: &'a ConfigValue,
+        keyword: &'a DicoKeyword,
     },
 }
 
@@ -106,11 +145,11 @@ fn build_config_tree<'a>(
     };
 
     for (kw_name, value) in config {
-        let kw = dico.get(kw_name).expect("ConfigValue for unknown keyword");
+        let keyword = dico.get(kw_name).expect("ConfigValue for unknown keyword");
 
         // Walk (and create) intermediate SubSection nodes
         let mut current = &mut tree;
-        for section_name in kw.default_text_desc().classification.iter() {
+        for section_name in keyword.default_text_desc().classification.iter() {
             // Skip empty name
             if section_name.is_empty() {
                 continue;
@@ -131,6 +170,7 @@ fn build_config_tree<'a>(
             SectionEntry::ConfigValue {
                 name: kw_name.clone(),
                 value,
+                keyword,
             },
         );
     }
@@ -138,12 +178,61 @@ fn build_config_tree<'a>(
     tree
 }
 
-fn display_config<'a>(tree: SectionEntry<'a>, render: &mut dyn ConfigViewer) -> Result<(), Errors> {
+fn as_bullet_list<T: fmt::Display>(lst: &[T]) -> String {
+    lst.iter().map(|entry| format!("- {}\n", entry)).collect()
+}
+
+fn display_extra_doc(
+    render: &mut dyn ConfigViewer,
+    doc_requests: &Vec<DocInfo>,
+    keyword: &DicoKeyword,
+) -> Result<(), Errors> {
+    let text_desc = keyword.default_text_desc();
+    for doc_req in doc_requests {
+        let text = match doc_req {
+            DocInfo::Help => text_desc.help.clone(),
+            DocInfo::ChoiceOptions => {
+                format!(
+                    "Possible values\n{}",
+                    as_bullet_list(&text_desc.choices_help)
+                )
+            }
+            DocInfo::DefaultValue => match &text_desc.default_val {
+                Some(value) => format!("Default value: {}", value),
+                None => continue,
+            },
+            //DocInfo::AlternateKeywordName => {},
+            DocInfo::Type => {
+                format!("Type: {:?}", keyword.type_)
+            }
+            DocInfo::Nargs => {
+                format!("Size: {}", keyword.nargs)
+            }
+            DocInfo::Boundaries => match keyword.boundaries {
+                Some((min, max)) => format!("Boundaries: [{} ; {}]", min, max),
+                None => continue,
+            },
+        };
+        render.emit_comment(text.as_str());
+    }
+
+    Ok(())
+}
+
+fn display_config<'a>(
+    tree: SectionEntry<'a>,
+    render: &mut dyn ConfigViewer,
+    args: &Args,
+) -> Result<(), Errors> {
     let current = tree;
     match current {
-        SectionEntry::ConfigValue { name, value } => {
+        SectionEntry::ConfigValue {
+            name,
+            value,
+            keyword,
+        } => {
             let json_value: serde_json::Value = value.try_into().map_err(one_err)?;
-
+            display_extra_doc(render, &args.extra_doc, keyword)?;
             render.emit_kv(name.as_str(), &json_value);
         }
         SectionEntry::SubSection { name, content } => {
@@ -151,7 +240,7 @@ fn display_config<'a>(tree: SectionEntry<'a>, render: &mut dyn ConfigViewer) -> 
                 render.emit_section_start(name.as_str());
             }
             for entry in content.into_values() {
-                display_config(entry, render)?;
+                display_config(entry, render, args)?;
             }
             if !name.is_empty() {
                 render.emit_section_end();
@@ -183,7 +272,7 @@ fn dump_config(
 
     let mut renderer = create_config_viewer(stdout.lock(), get_config_viewer_options(args));
 
-    display_config(tree, renderer.as_mut())?;
+    display_config(tree, renderer.as_mut(), args)?;
     renderer.finish();
 
     Ok(())
