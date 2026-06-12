@@ -1,6 +1,7 @@
 //! # Configuration Value
 //!
 use super::parse_helpers::{parse_fortran_float, unquote_single, TokenInfo};
+use std::fmt::{self, Debug};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -357,6 +358,51 @@ impl ConfigValue {
             ConfigValue::BooleanCollection(vec) => vec.is_empty(),
             ConfigValue::IntegerCollection(vec) => vec.is_empty(),
             ConfigValue::FloatCollection(vec) => vec.is_empty(),
+        }
+    }
+}
+
+impl fmt::Display for ConfigValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConfigValue::String(value) => std::fmt::Display::fmt(&value, f),
+            ConfigValue::Path(value) => std::fmt::Display::fmt(&value.display(), f),
+            ConfigValue::Boolean(value) => std::fmt::Display::fmt(&value, f),
+            ConfigValue::Integer(value) => std::fmt::Display::fmt(&value, f),
+            ConfigValue::Float(value) => std::fmt::Display::fmt(&value, f),
+            ConfigValue::StringCollection(vec) => write!(f, "{}", vec.join(", ")),
+            ConfigValue::PathCollection(vec) => write!(
+                f,
+                "{}",
+                vec.iter()
+                    .map(|value| value.display().to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            ConfigValue::BooleanCollection(vec) => write!(
+                f,
+                "{}",
+                vec.iter()
+                    .map(bool::to_string)
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            ConfigValue::IntegerCollection(vec) => write!(
+                f,
+                "{}",
+                vec.iter()
+                    .map(i64::to_string)
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            ConfigValue::FloatCollection(vec) => write!(
+                f,
+                "{}",
+                vec.iter()
+                    .map(f64::to_string)
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
         }
     }
 }

@@ -317,7 +317,7 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
                     choices_values.push(option.clone());
                     choices_help.push(ChoiceOptionHelp {
                         option,
-                        _help: help_text,
+                        help: help_text,
                     });
                 }
                 Err(errs) => {
