@@ -71,7 +71,7 @@ where
         //     let path = unquote_single(raw);
         //     Ok(Value::Path(std::path::PathBuf::from(path)))
         // }
-        DicoType::String => Ok(ConfigValue::String(unquote_single(raw).to_string())),
+        DicoType::String => Ok(ConfigValue::String(unquote_single(raw))),
     }
 }
 
