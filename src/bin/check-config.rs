@@ -1,4 +1,5 @@
 use core::fmt;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
@@ -113,7 +114,7 @@ fn load_dico(path: &PathBuf) -> Result<Dico, Errors> {
 enum SectionEntry<'a> {
     SubSection {
         name: String,
-        content: HashMap<String, SectionEntry<'a>>,
+        content: BTreeMap<String, SectionEntry<'a>>,
     },
     ConfigValue {
         name: String,
@@ -123,7 +124,7 @@ enum SectionEntry<'a> {
 }
 
 impl<'a> SectionEntry<'a> {
-    fn content_mut(&mut self) -> &mut HashMap<String, SectionEntry<'a>> {
+    fn content_mut(&mut self) -> &mut BTreeMap<String, SectionEntry<'a>> {
         match self {
             SectionEntry::SubSection { content, .. } => content,
             SectionEntry::ConfigValue { name, .. } => {
@@ -141,7 +142,7 @@ fn build_config_tree<'a>(
     // Rebuild the hierarchy of the dictionary
     let mut tree = SectionEntry::SubSection {
         name: String::from(""),
-        content: HashMap::new(),
+        content: BTreeMap::new(),
     };
 
     for (kw_name, value) in config {
@@ -160,7 +161,7 @@ fn build_config_tree<'a>(
                 .entry(section_name.clone())
                 .or_insert_with(|| SectionEntry::SubSection {
                     name: section_name.clone(),
-                    content: HashMap::new(),
+                    content: BTreeMap::new(),
                 });
         }
 
