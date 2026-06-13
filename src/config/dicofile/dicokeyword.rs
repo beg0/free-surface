@@ -1,5 +1,6 @@
 //! # Keywords within a Telemac dico file
 use std::collections::HashMap;
+use std::fmt;
 
 use super::super::configvalue::{ConfigValue, DicoType};
 use super::{normalize_keyword_name, LOCALES};
@@ -19,7 +20,17 @@ pub enum ChoiceValidationError {
 #[derive(Debug, Clone)]
 pub struct ChoiceOptionHelp {
     pub option: ConfigValue,
-    pub _help: String,
+    pub help: String,
+}
+
+impl fmt::Display for ChoiceOptionHelp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.help.is_empty() {
+            writeln!(f, "{}", self.option)
+        } else {
+            writeln!(f, "{}: {}", self.option, self.help)
+        }
+    }
 }
 
 /// Localized data for a [DicoKeyword]

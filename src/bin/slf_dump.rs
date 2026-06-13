@@ -4,6 +4,7 @@
 //
 use std::io;
 use std::process::ExitCode;
+use std::str::FromStr;
 use std::{process, vec};
 
 use clap::Parser;
@@ -35,12 +36,12 @@ struct Args {
     /// variables, variables+units, points, points:layer=N,
     /// elements, elements:layer=N, datetime, results
     #[arg(long, value_delimiter = ',')]
-    show: Vec<String>,
+    show: Vec<ShowToken>,
 
     /// Print values of variable NAME at time-step index T (0-based).
     /// Format: NAME:T  - repeatable, e.g. --history DEPTH:0 --history DEPTH:1
     #[arg(long, value_name = "NAME:T")]
-    history: Vec<String>,
+    history: Vec<HistoryQuery>,
 
     /// Output format
     #[arg(long, value_enum, default_value_t = Format::Human)]
@@ -63,7 +64,7 @@ struct Args {
 // Parsed show-token
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum ShowToken {
     Title,
     NPoints,
@@ -76,36 +77,39 @@ enum ShowToken {
     Results,
 }
 
-fn parse_show_token(s: &str) -> Result<ShowToken, String> {
-    let s = s.trim();
-    // tokens with parameters: "points:layer=N", "elements:layer=N"
-    if let Some(rest) = s.strip_prefix("points:layer=") {
-        let n: usize = rest
-            .parse()
-            .map_err(|_| format!("invalid layer index in '{s}'"))?;
-        return Ok(ShowToken::Points { layer: Some(n) });
-    }
-    if let Some(rest) = s.strip_prefix("elements:layer=") {
-        let n: usize = rest
-            .parse()
-            .map_err(|_| format!("invalid layer index in '{s}'"))?;
-        return Ok(ShowToken::Elements { layer: Some(n) });
-    }
-    match s {
-        "title" => Ok(ShowToken::Title),
-        "npoints" => Ok(ShowToken::NPoints),
-        "nelements" => Ok(ShowToken::NElements),
-        "nlayers" | "nplanes" => Ok(ShowToken::NLayers),
-        "variables" => Ok(ShowToken::Variables { with_units: false }),
-        "variables+units" => Ok(ShowToken::Variables { with_units: true }),
-        "points" => Ok(ShowToken::Points { layer: None }),
-        "elements" => Ok(ShowToken::Elements { layer: None }),
-        "datetime" => Ok(ShowToken::Datetime),
-        "results" => Ok(ShowToken::Results),
-        other => Err(format!("unknown section '{other}'")),
+impl FromStr for ShowToken {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        // tokens with parameters: "points:layer=N", "elements:layer=N"
+        if let Some(rest) = s.strip_prefix("points:layer=") {
+            let n: usize = rest
+                .parse()
+                .map_err(|_| format!("invalid layer index in '{s}'"))?;
+            return Ok(ShowToken::Points { layer: Some(n) });
+        }
+        if let Some(rest) = s.strip_prefix("elements:layer=") {
+            let n: usize = rest
+                .parse()
+                .map_err(|_| format!("invalid layer index in '{s}'"))?;
+            return Ok(ShowToken::Elements { layer: Some(n) });
+        }
+        match s {
+            "title" => Ok(ShowToken::Title),
+            "npoints" => Ok(ShowToken::NPoints),
+            "nelements" => Ok(ShowToken::NElements),
+            "nlayers" | "nplanes" => Ok(ShowToken::NLayers),
+            "variables" => Ok(ShowToken::Variables { with_units: false }),
+            "variables+units" => Ok(ShowToken::Variables { with_units: true }),
+            "points" => Ok(ShowToken::Points { layer: None }),
+            "elements" => Ok(ShowToken::Elements { layer: None }),
+            "datetime" => Ok(ShowToken::Datetime),
+            "results" => Ok(ShowToken::Results),
+            other => Err(format!("unknown section '{other}'")),
+        }
     }
 }
-
 // ---------------------------------------------------------------------------
 // Parsing args for rendering
 // ---------------------------------------------------------------------------
@@ -125,23 +129,27 @@ fn get_config_viewer_options(args: &Args) -> ConfigViewerOptions {
 // Parsed history query
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct HistoryQuery {
     variable: String,
     time_index: usize,
 }
 
-fn parse_history(s: &str) -> Result<HistoryQuery, String> {
-    let (name, t_str) = s
-        .rsplit_once(':')
-        .ok_or_else(|| format!("history query '{s}' must be in NAME:T format"))?;
-    let time_index: usize = t_str
-        .parse()
-        .map_err(|_| format!("invalid time index '{t_str}' in history query '{s}'"))?;
-    Ok(HistoryQuery {
-        variable: name.to_string(),
-        time_index,
-    })
+impl FromStr for HistoryQuery {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (name, t_str) = s
+            .rsplit_once(':')
+            .ok_or_else(|| format!("history query '{s}' must be in NAME:T format"))?;
+        let time_index: usize = t_str
+            .parse()
+            .map_err(|_| format!("invalid time index '{t_str}' in history query '{s}'"))?;
+        Ok(HistoryQuery {
+            variable: name.to_string(),
+            time_index,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -349,29 +357,8 @@ fn render_history(e: &mut dyn ConfigViewer, slf: &Selafin, query: &HistoryQuery)
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    // Parse and validate --show tokens up-front so we fail fast before I/O
-    let tokens: Vec<ShowToken> = args
-        .show
-        .iter()
-        .map(|s| {
-            parse_show_token(s).unwrap_or_else(|e| {
-                eprintln!("error: {e}");
-                eprintln!("run with --help to see valid section names");
-                process::exit(1);
-            })
-        })
-        .collect();
-
-    let history_queries: Vec<HistoryQuery> = args
-        .history
-        .iter()
-        .map(|s| {
-            parse_history(s).unwrap_or_else(|e| {
-                eprintln!("error: {e}");
-                process::exit(1);
-            })
-        })
-        .collect();
+    let tokens: &Vec<ShowToken> = &args.show;
+    let history_queries: &Vec<HistoryQuery> = &args.history;
 
     if tokens.is_empty() && history_queries.is_empty() {
         eprintln!("nothing to show - use --show and/or --history");
@@ -388,7 +375,7 @@ fn main() -> ExitCode {
     let stdout = io::stdout();
     let mut renderer = create_config_viewer(stdout.lock(), get_config_viewer_options(&args));
 
-    run_sections(renderer.as_mut(), &slf, &tokens, &history_queries);
+    run_sections(renderer.as_mut(), &slf, tokens, history_queries);
     renderer.finish();
 
     ExitCode::SUCCESS
