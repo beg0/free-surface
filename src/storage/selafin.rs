@@ -6,7 +6,7 @@
 //!
 
 pub mod container;
-mod geometry;
+pub mod geometry;
 mod parser;
 mod variable;
 mod writer;
