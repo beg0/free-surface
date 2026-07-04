@@ -4,7 +4,9 @@ binrw
 clippy
 indoc
 isize
+flate
 rfind
 rustc
 serde
+ureq
 thiserror
