@@ -8,12 +8,6 @@ mod locatedchars;
 
 pub use damocles::*;
 
-#[cfg(test)]
-mod tests {
-    mod parse_fortran_float;
-    mod unquote_single;
-}
-
 /// Quote a string only if necessary, using single-quote with doubling escapes.
 ///
 /// The quoting rules are:
@@ -215,4 +209,10 @@ pub fn write_fortran_float(v: f64) -> String {
 
     let exp: i32 = exp_str.parse().unwrap();
     format!("{mantissa}E{:+03}", exp) // {:+03} -> sign + at least 2 digits
+}
+
+#[cfg(test)]
+mod tests {
+    mod parse_fortran_float;
+    mod unquote_single;
 }

@@ -126,6 +126,7 @@ fn test_negative_integer() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_float() {
     let config = parse_ok("my favorite number = 3.14");
     assert_eq!(config["MY FAVORITE NUMBER"], ConfigValue::Float(3.14));
@@ -138,6 +139,7 @@ fn test_float_whole_number() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_float_negative() {
     let config = parse_ok("my favorite number = -2.718");
     assert_eq!(config["MY FAVORITE NUMBER"], ConfigValue::Float(-2.718));
@@ -288,6 +290,7 @@ fn test_empty_lines_ignored() {
 // --- Multiple keys ---
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_multiple_keys() {
     let input = indoc::indoc! {"
         who mom loves = me

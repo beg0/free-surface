@@ -184,6 +184,7 @@ fn test_integer_invalid_empty() {
 // --------------
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_real_decimal() {
     assert_eq!(
         parse_single_value("3.14", &DicoType::Real).unwrap(),
@@ -200,6 +201,7 @@ fn test_real_whole_number() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_real_negative() {
     assert_eq!(
         parse_single_value("-2.718", &DicoType::Real).unwrap(),
@@ -454,6 +456,7 @@ fn test_real_collection_scientific_notation() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_real_collection_single_element() {
     assert_eq!(
         parse_collection_values(vec!["3.14"], &DicoType::Real).unwrap(),
