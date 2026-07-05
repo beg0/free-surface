@@ -12,7 +12,7 @@ use std::fmt;
 use std::rc::Rc;
 
 pub use dicokeyword::{ChoiceValidationError, DicoKeyword, GuiControl};
-pub use parser::parse_dico;
+pub use parser::{parse, parse_file};
 
 /// Possibles locales in a Dico file
 const LOCALES: [&str; 2] = ["en", "fr"];

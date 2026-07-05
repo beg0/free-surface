@@ -1,6 +1,6 @@
 //! # Parser of textual telemac dico files
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
 
 use super::super::configvalue::{parse_single_value_2, parse_value_2, ConfigValue, DicoType};
@@ -75,10 +75,24 @@ struct BlockParseInfo {
     pos: TextLoc,
 }
 
+fn one_err(e: impl std::error::Error + 'static) -> VecErrorPtr {
+    vec![Box::new(e)]
+}
+
 /// Parse a Telemac dico file
-pub fn parse_dico(input: &str, filename: &PathBuf) -> Result<Dico, VecErrorPtr> {
+pub fn parse_file<P: AsRef<Path>>(filename: P) -> Result<Dico, VecErrorPtr> {
+    let content = std::fs::read_to_string(&filename).map_err(one_err)?;
     let file_pos = TextLoc::from((filename, 0));
 
+    parse_dico_with_textloc(&content, file_pos)
+}
+
+/// Parse a Telemac dico from a buffer
+pub fn parse(input: &str) -> Result<Dico, VecErrorPtr> {
+    parse_dico_with_textloc(input, TextLoc::default())
+}
+
+fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, VecErrorPtr> {
     let blocks = split_into_blocks(input, &file_pos);
     let mut keywords: Vec<Rc<DicoKeyword>> = Vec::new();
     let mut errors: VecErrorPtr = Vec::new();
