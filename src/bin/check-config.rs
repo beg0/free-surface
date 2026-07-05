@@ -106,8 +106,7 @@ fn one_err(e: impl std::error::Error + 'static) -> Errors {
 fn load_dico(path: &PathBuf) -> Result<Dico, Errors> {
     let content = std::fs::read_to_string(path).map_err(one_err)?;
 
-    let path_str = path.to_string_lossy();
-    config::dicofile::parse_dico(&content, &path_str)
+    config::dicofile::parse_dico(&content, path)
 }
 
 #[derive(Debug)]

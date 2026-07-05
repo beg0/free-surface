@@ -2,6 +2,7 @@ use super::super::parse_helpers::DamoclesError;
 use super::dicofile::parse_dico;
 use super::dicofile::Dico;
 use super::*;
+use std::path::PathBuf;
 
 const MY_FILE: &str = "/dave/null";
 
@@ -81,7 +82,7 @@ fn make_dico() -> Dico {
         INDEX = 9
         NIVEAU = 2
     "};
-    parse_dico(dico_content, MY_FILE).expect("Can't create dico")
+    parse_dico(dico_content, &PathBuf::from(MY_FILE)).expect("Can't create dico")
 }
 
 // --- Helpers ---
