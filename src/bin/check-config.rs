@@ -279,7 +279,7 @@ fn run(args: &Args) -> Result<(), Errors> {
     let config = if args.full_dump {
         parser.config_from_file(&args.config)
     } else {
-        parser.parse_from_file(&args.config)
+        parser.parse_file(&args.config)
     }?;
 
     if args.dump || args.full_dump {

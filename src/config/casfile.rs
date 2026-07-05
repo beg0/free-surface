@@ -80,7 +80,7 @@ impl<'a> Parser<'a> {
 
     /// Read a CAS file and parse it
     #[allow(dead_code)]
-    pub fn parse_from_file(
+    pub fn parse_file(
         &self,
         filename: &String,
     ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
@@ -151,7 +151,7 @@ impl<'a> Parser<'a> {
         &self,
         filename: &String,
     ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
-        let mut config = self.parse_from_file(filename)?;
+        let mut config = self.parse_file(filename)?;
 
         self.fill_missing_fields(&mut config);
         Ok(config)
