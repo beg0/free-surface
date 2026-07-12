@@ -17,14 +17,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - name: Install Rust compiler
         uses: dtolnay/rust-toolchain@v1
         with:
             toolchain: stable
             components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v5.0.4
+        with:
+          path: .cache/test-data
+          key: test-data-0001   # bump this when you pin a new data version
       - name: Run pre-commit
         uses: j178/prek-action@v2
       - name: Run cargo check (all features)
         run: cargo check --tests --all-features
+      - name: Run cargo test (all features)
+        run: cargo test -r -- --include-ignored
       - name: Run cargo doc
         run: cargo doc --all-features
