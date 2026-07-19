@@ -60,6 +60,42 @@ impl Dico {
             },
         }
     }
+
+    /// Returns the number of keywords in the dictionary.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use free_surface::config::dicofile::parse;
+    ///
+    /// let dico = parse("").unwrap();
+    /// assert_eq!(dico.len(), 0);
+    /// ```
+    pub fn len(&self) -> usize {
+        let first = self.per_locale.iter().next();
+        match first {
+            Some((_locale, keywords)) => keywords.len(),
+            None => 0,
+        }
+    }
+
+    /// Returns `true` if the dictionary contains no keywords.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use free_surface::config::dicofile::parse;
+    ///
+    /// let dico = parse("").unwrap();
+    /// assert!(dico.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        let first = self.per_locale.iter().next();
+        match first {
+            Some((_locale, keywords)) => keywords.is_empty(),
+            None => true,
+        }
+    }
 }
 
 impl fmt::Debug for Dico {
