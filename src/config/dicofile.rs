@@ -49,11 +49,15 @@ impl Dico {
     /// Iterator visiting all keywords of the dico
     ///
     pub fn iter<'a>(&'a self) -> Iter<'a> {
-        let base = self.per_locale.get(LOCALES[0]).unwrap();
-        let iter = base.iter();
-        Iter {
-            //base,
-            iter,
+        let english_locale = self.per_locale.get(LOCALES[0]);
+
+        match english_locale {
+            Some(keywords) => Iter {
+                iter: keywords.iter(),
+            },
+            None => Iter {
+                iter: std::collections::hash_map::Iter::default(),
+            },
         }
     }
 }
