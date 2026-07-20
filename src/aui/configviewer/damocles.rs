@@ -39,7 +39,10 @@ fn to_damocles_string(value: &JsonValue) -> String {
         JsonValue::String(val) => single_quote_if_needed(val.as_str()),
         JsonValue::Null => String::from("''"), // I don't really know how to handle Null here, thus I put an empty string
         JsonValue::Number(val) => {
-            if let Some(val_f64) = val.as_f64() {
+            // when we have an integer be sure to keep it as integer and not convert it as float
+            if val.is_i64() || val.is_u64() {
+                val.to_string()
+            } else if let Some(val_f64) = val.as_f64() {
                 write_fortran_float(val_f64)
             } else {
                 val.to_string()
