@@ -40,14 +40,14 @@ pub use damocles::*;
 /// // Multiple consecutive single quotes
 /// assert_eq!(single_quote_if_needed("''"),             "''''''");
 ///
-/// // Empty string - no whitespace, no quotes, returned as-is
-/// assert_eq!(single_quote_if_needed(""),               "");
+/// // Empty string get quoted
+/// assert_eq!(single_quote_if_needed(""),               "''");
 ///
 /// // Already looks quoted - treated as plain text, not double-quoted
 /// assert_eq!(single_quote_if_needed("'hello'"),        "'''hello'''");
 /// ```
 pub fn single_quote_if_needed(s: &str) -> String {
-    let needs_quoting = s.contains(|c: char| c.is_whitespace() || c == '\'');
+    let needs_quoting = s.is_empty() || s.contains(|c: char| c.is_whitespace() || c == '\'');
 
     if !needs_quoting {
         return s.to_string();
