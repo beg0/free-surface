@@ -54,7 +54,14 @@ fn to_damocles_string(value: &JsonValue) -> String {
 impl<W: Write> ConfigViewer for DamoclesConfigViewer<W> {
     fn emit_kv(&mut self, key: &str, value: &JsonValue) {
         self.last_is_kv = true;
-        writeln!(self.writer, "{} = {}", key, to_damocles_string(value)).unwrap()
+        let v = to_damocles_string(value);
+
+        // to_damocles_string() may return an empty string for empty list
+        // There is no way to represent an empty list today in the damocles format
+        // Thus better to print nothing
+        if !v.is_empty() {
+            writeln!(self.writer, "{} = {}", key, v).unwrap()
+        }
     }
     fn emit_table(&mut self, key: &str, headers: &[&str], rows: &[Vec<JsonValue>]) {
         let prefix_len = key.len() + 3; // +3 because of " = " after the key,
