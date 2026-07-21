@@ -149,9 +149,9 @@ impl<'a> Parser<'a> {
     /// Load a config from a steering file
     ///
     /// Get the full config from a steering file.
-    pub fn config_from_file(
+    pub fn config_from_file<P: AsRef<Path>>(
         &self,
-        filename: &String,
+        filename: P,
     ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         let mut config = self.parse_file(filename)?;
 
