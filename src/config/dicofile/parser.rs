@@ -41,6 +41,13 @@ pub enum DicoParseError {
         reason: String,
         pos: TextLoc,
     },
+    // #[error("{pos}: Duplicated field {field} in block starting at {block_pos}")]
+    // DuplicatedKey {
+    //     field: String,
+    //     pos: TextLoc,
+    //     block_pos: TextLoc,
+    // },
+
     // #[error("{pos}: Inconsistent default values")]
     // InconsistentDefaultValues {
     //     field: String,
@@ -70,11 +77,6 @@ pub enum DicoParseError {
     },
 }
 
-struct BlockParseInfo {
-    val: String,
-    pos: TextLoc,
-}
-
 fn one_err(e: impl std::error::Error + 'static) -> VecErrorPtr {
     vec![Box::new(e)]
 }
@@ -93,96 +95,30 @@ pub fn parse(input: &str) -> Result<Dico, VecErrorPtr> {
 }
 
 fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, VecErrorPtr> {
-    let blocks = split_into_blocks(input, &file_pos);
-    let mut keywords: Vec<Rc<DicoKeyword>> = Vec::new();
-    let mut errors: VecErrorPtr = Vec::new();
+    let mut parser = DicoFieldParser {
+        fields: HashMap::new(),
+        block_pos: file_pos.clone(),
+        file_pos,
+        errors: Vec::new(),
+        keywords: Vec::new(),
+    };
 
-    for block in blocks {
-        if block.val.trim().is_empty() {
-            continue;
-        }
-        match parse_block(&block.val, &block.pos) {
-            Ok(kw) => {
-                keywords.push(Rc::new(kw));
-            }
-            Err(mut errs) => {
-                errors.append(&mut errs);
-            }
-        }
-    }
+    parser.parse_fields(input);
+    parser.finalize_parsing();
 
-    let mut per_locale: HashMap<String, DicoInner> = HashMap::with_capacity(LOCALES.len());
-
-    for locale in LOCALES {
-        let locale = locale.to_owned();
-        let mut inner: DicoInner = HashMap::with_capacity(keywords.len());
-        for kw in &keywords {
-            if let Some(desc) = kw.text_desc.get(&locale) {
-                inner.insert(desc.name.clone(), kw.clone());
-            }
-        }
-
-        per_locale.insert(locale.to_owned(), inner);
-    }
-
-    if errors.is_empty() {
-        Ok(Dico { per_locale })
+    if parser.errors.is_empty() {
+        Ok(parser.to_dico())
     } else {
-        Err(errors)
+        Err(parser.errors)
     }
-}
-
-/// Split the file into blocks delimited by a lone "/" on its own line.
-/// Lines starting with "///" or "////////" are section headers - skip them.
-fn split_into_blocks(input: &str, file_pos: &TextLoc) -> Vec<BlockParseInfo> {
-    let mut blocks: Vec<BlockParseInfo> = Vec::new();
-    let mut current = String::new();
-    let mut start_line = 0;
-
-    for (line_idx, line) in input.lines().enumerate() {
-        let trimmed = line.trim();
-
-        // Section header comments (/// or more slashes) - skip
-        if trimmed.starts_with("///") {
-            continue;
-        }
-
-        // A lone "/" or "&DYN" marks a block boundary
-        if trimmed == "/" || trimmed == "&DYN" {
-            if !current.trim().is_empty() {
-                blocks.push(BlockParseInfo {
-                    val: current,
-                    pos: file_pos.clone_with_line(start_line + 1),
-                });
-                current = String::new();
-                start_line = line_idx;
-            }
-            continue;
-        }
-
-        // Full-line comments starting with "/" or "#" - skip
-        if trimmed.starts_with('/') || trimmed.starts_with('#') {
-            continue;
-        }
-
-        current.push_str(line);
-        current.push('\n');
-    }
-
-    if !current.trim().is_empty() {
-        blocks.push(BlockParseInfo {
-            val: current,
-            pos: file_pos.clone_with_line(start_line + 1),
-        });
-    }
-
-    blocks
 }
 
 /// Parse a single keyword block into key->raw_value pairs, then build a DicoKeyword.
-fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecErrorPtr> {
+fn parse_block(
+    fields: &HashMap<String, KeywordParseInfo>,
+    block_pos: &TextLoc,
+) -> Result<DicoKeyword, VecErrorPtr> {
     let mut errors = Vec::new();
-    let fields = parse_dico_fields(block, &mut errors, block_pos);
 
     let mut text_desc: HashMap<String, KeywordTextDescription> = HashMap::new();
     let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
@@ -429,54 +365,48 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     })
 }
 
-struct DicoFieldParser<'a> {
+struct DicoFieldParser {
+    file_pos: TextLoc,
+
+    // Fields of the current block
     fields: HashMap<String, KeywordParseInfo>,
-    block_pos: &'a TextLoc,
-    errors: &'a mut VecErrorPtr,
-    known_keys: [&'static str; 20],
+    // Start postion of the current block
+    block_pos: TextLoc,
+
+    /// All errors encountered during processing
+    pub errors: VecErrorPtr,
+
+    /// All keywords already parsed
+    keywords: Vec<Rc<DicoKeyword>>,
 }
 
-/// Parse "key = value" pairs from a block, handling multiline values.
-/// A new key starts when a line matches "IDENTIFIER = ...".
-fn parse_dico_fields(
-    block: &str,
-    errors: &mut VecErrorPtr,
-    block_pos: &TextLoc,
-) -> HashMap<String, KeywordParseInfo> {
-    let mut parser = DicoFieldParser {
-        fields: HashMap::new(),
-        block_pos,
-        errors,
-        known_keys: [
-            "NOM1",
-            "NOM",
-            "TYPE",
-            "INDEX",
-            "TAILLE",
-            "SUBMIT",
-            "DEFAUT1",
-            "DEFAUT",
-            "MNEMO",
-            "CONTROLE",
-            "CHOIX1",
-            "CHOIX",
-            "APPARENCE",
-            "RUBRIQUE1",
-            "RUBRIQUE",
-            "COMPOSE",
-            "COMPORT",
-            "NIVEAU",
-            "AIDE1",
-            "AIDE",
-        ],
-    };
+const VALID_DICO_KEYS: [&str; 20] = [
+    "NOM1",
+    "NOM",
+    "TYPE",
+    "INDEX",
+    "TAILLE",
+    "SUBMIT",
+    "DEFAUT1",
+    "DEFAUT",
+    "MNEMO",
+    "CONTROLE",
+    "CHOIX1",
+    "CHOIX",
+    "APPARENCE",
+    "RUBRIQUE1",
+    "RUBRIQUE",
+    "COMPOSE",
+    "COMPORT",
+    "NIVEAU",
+    "AIDE1",
+    "AIDE",
+];
 
-    parser.parse_fields(block);
+/// Keys that starts a new block
+const NEW_BLOCK_KEY: [&str; 2] = ["NOM", "NOM1"];
 
-    parser.fields
-}
-
-impl<'a> DamoclesParser for DicoFieldParser<'a> {
+impl DamoclesParser for DicoFieldParser {
     fn error(&mut self, e: ErrorPtr) {
         self.errors.push(e);
     }
@@ -518,19 +448,97 @@ impl<'a> DamoclesParser for DicoFieldParser<'a> {
 
     fn loc(&self, pos: (usize, usize)) -> TextLoc {
         // pos is 1-based, but here we want an offset, so something which is 0-based
-        self.block_pos.clone_with_line_offset_col(pos.0 - 1, pos.1)
+        self.file_pos.clone_with_line_offset_col(pos.0, pos.1)
     }
 
     fn new_field(&mut self, kpi: KeywordParseInfo) {
         let key_upper = normalize_keyword_name(kpi.keyname());
-        if self.known_keys.contains(&key_upper.as_str()) {
-            self.fields.insert(key_upper, kpi);
+        if VALID_DICO_KEYS.contains(&key_upper.as_str()) {
+            if self.fields.is_empty() {
+                self.block_pos = kpi.key.start_pos.clone();
+            }
+
+            let new_block = match self.fields.entry(key_upper.clone()) {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    // Duplicated key, this may means a new block
+
+                    if NEW_BLOCK_KEY.contains(&entry.key().as_str()) {
+                        let mut new_fields = HashMap::new();
+                        let block_pos = kpi.key.start_pos.clone();
+                        new_fields.insert(entry.key().clone(), kpi);
+                        Some((new_fields, block_pos))
+                    } else {
+                        // FIXME: It looks like a good idea to warm the user if a dico contains a duplicated key.
+                        // However, it appears that telemac dico (such as telemac3d.dico or khione.dico) contain
+                        // duplicated key. Thus we must ignore such errors if we want to be 100% compatible with
+                        // telemac
+                        // self.error(Box::new(DicoParseError::DuplicatedKey {
+                        //     field: kpi.key.token.clone(),
+                        //     pos: kpi.key.start_pos.clone(),
+                        //     block_pos: self.block_pos.clone(),
+                        // }));
+                        entry.insert(kpi);
+                        None
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(kpi);
+                    None
+                }
+            };
+
+            if let Some((new_fields, block_pos)) = new_block {
+                self.process_block();
+
+                // Start the new block
+                self.fields = new_fields;
+                self.block_pos = block_pos;
+            }
         } else {
             self.error(Box::new(DicoParseError::UnknownField {
                 field: kpi.key.token.to_string(),
                 pos: kpi.key.start_pos.clone(),
             }));
         }
+    }
+}
+
+impl DicoFieldParser {
+    fn process_block(&mut self) {
+        match parse_block(&self.fields, &self.block_pos) {
+            Ok(keyword) => {
+                self.keywords.push(Rc::new(keyword));
+            }
+            Err(errors) => {
+                self.errors.extend(errors);
+            }
+        }
+    }
+
+    /// Finalize the parser.
+    /// Handle the last block
+    pub fn finalize_parsing(&mut self) {
+        if !self.fields.is_empty() {
+            self.process_block();
+        }
+    }
+
+    pub fn to_dico(&self) -> Dico {
+        let mut per_locale: HashMap<String, DicoInner> = HashMap::with_capacity(LOCALES.len());
+
+        for locale in LOCALES {
+            let locale = locale.to_owned();
+            let mut inner: DicoInner = HashMap::with_capacity(self.keywords.len());
+            for kw in &self.keywords {
+                if let Some(desc) = kw.text_desc.get(&locale) {
+                    inner.insert(desc.name.clone(), kw.clone());
+                }
+            }
+
+            per_locale.insert(locale.to_owned(), inner);
+        }
+
+        Dico { per_locale }
     }
 }
 
