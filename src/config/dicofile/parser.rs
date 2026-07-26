@@ -315,9 +315,9 @@ fn parse_block(
 
     let apparence =
         get_last("APPARENCE", &mut errors).and_then(|token_info| match token_info.token.as_str() {
-            "LIST" | "LISTE IS EDITABLE" => Some(GuiControl::List),
+            "LIST" | "LISTE IS EDITABLE" | "TOMLIST" => Some(GuiControl::List),
             "DYNLIST" => Some(GuiControl::DynList),
-            "DYNLIST2" => Some(GuiControl::MultipleDynList),
+            "DYNLIST2" | "LISTE IS SELECT" => Some(GuiControl::MultipleDynList),
             "TUPLE" => Some(GuiControl::Tuple),
             "FILE_OR_FOLDER" | "LISTE IS FICHIER" => Some(GuiControl::Path),
             other => {
