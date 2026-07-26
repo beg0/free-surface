@@ -8,6 +8,38 @@ use test_helpers::{fixture, read_lines, telemac_file};
 
 #[test]
 #[ignore = "downloads telemac source, run with --include-ignored"]
+fn all_telemac_dic() {
+    let dico_files = [
+        "sources/khione/khione.dico",
+        "sources/telemac2d/telemac2d.dico",
+        "sources/tomawac/tomawac.dico",
+        "sources/telemac3d/telemac3d.dico",
+        "sources/postel3d/postel3d.dico",
+        "sources/sisyphe/sisyphe.dico",
+        "sources/waqtel/waqtel.dico",
+        "sources/stbtel/stbtel.dico",
+        "sources/artemis/artemis.dico",
+    ];
+
+    for relative_path in dico_files {
+        let full_path = telemac_file(relative_path).expect("Can't get telemac file");
+        match parse_file(full_path) {
+            Ok(_) => {}
+            Err(errs) => {
+                panic!(
+                    "{}",
+                    errs.iter()
+                        .map(|e| format!("{}\n", e))
+                        .collect::<Vec<String>>()
+                        .concat()
+                );
+            }
+        };
+    }
+}
+
+#[test]
+#[ignore = "downloads telemac source, run with --include-ignored"]
 fn telemac2d_dico() {
     let dico_path =
         telemac_file("sources/telemac2d/telemac2d.dico").expect("Can't get telemac file");
