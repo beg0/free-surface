@@ -17,6 +17,7 @@ repos:
     -   id: build
         stages: [pre-push]
     -   id: clippy
+        args:  ["--all-targets", "--no-deps", "--", "-D", "warnings"]
 -   repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
     hooks:

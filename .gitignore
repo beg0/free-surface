@@ -1,1 +1,8 @@
 /target
+.cache/
+
+# Backup files
+*.bak
+
+# OpenOffice temp files
+.~lock.*#

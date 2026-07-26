@@ -1,9 +1,7 @@
 use super::super::parse_helpers::DamoclesError;
-use super::dicofile::parse_dico;
+use super::dicofile::parse;
 use super::dicofile::Dico;
 use super::*;
-
-const MY_FILE: &str = "/dave/null";
 
 fn make_dico() -> Dico {
     let dico_content = indoc::indoc! {"
@@ -81,7 +79,7 @@ fn make_dico() -> Dico {
         INDEX = 9
         NIVEAU = 2
     "};
-    parse_dico(dico_content, MY_FILE).expect("Can't create dico")
+    parse(dico_content).expect("Can't create dico")
 }
 
 // --- Helpers ---
@@ -128,6 +126,7 @@ fn test_negative_integer() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_float() {
     let config = parse_ok("my favorite number = 3.14");
     assert_eq!(config["MY FAVORITE NUMBER"], ConfigValue::Float(3.14));
@@ -140,6 +139,7 @@ fn test_float_whole_number() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_float_negative() {
     let config = parse_ok("my favorite number = -2.718");
     assert_eq!(config["MY FAVORITE NUMBER"], ConfigValue::Float(-2.718));
@@ -290,6 +290,7 @@ fn test_empty_lines_ignored() {
 // --- Multiple keys ---
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_multiple_keys() {
     let input = indoc::indoc! {"
         who mom loves = me

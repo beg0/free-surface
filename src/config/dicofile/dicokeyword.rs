@@ -40,7 +40,7 @@ pub struct KeywordTextDescription {
     pub choices_help: Vec<ChoiceOptionHelp>, // Help text for each possible values
     pub default_val: Option<ConfigValue>,    // Default value
 
-    pub classification: [String; 3], // Classification, 3 levels
+    pub classification: Vec<String>, // Classification, per levels
 
     #[allow(dead_code)]
     pub help: String, // Keyword description
@@ -68,7 +68,7 @@ pub struct DicoKeyword {
     pub selection_control: Option<GuiControl>, // Which GUI control widget to use for this entry
     pub compose: Option<String>,               // Unused in free-surface
     pub comport: Option<String>,               // Unused in free-surface
-    pub level: u32,                            // 0 = mandatory
+    pub level: i32,                            // 0 = mandatory
 }
 
 impl DicoKeyword {

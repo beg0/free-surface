@@ -158,8 +158,8 @@ where
 /// both in French and English
 fn parse_bool(raw: &str) -> Result<bool, String> {
     match raw.to_lowercase().as_str() {
-        "vrai" | "oui" | "true" | "yes" | "1" | "on" => Ok(true),
-        "faux" | "non" | "false" | "no" | "0" | "off" => Ok(false),
+        "vrai" | "oui" | "true" | ".true." | "yes" | "1" | "on" => Ok(true),
+        "faux" | "non" | "false" | ".false." | "no" | "0" | "off" => Ok(false),
         _ => Err(format!("'{}' is not a valid boolean", raw)),
     }
 }

@@ -12,7 +12,7 @@ use std::fmt;
 use std::rc::Rc;
 
 pub use dicokeyword::{ChoiceValidationError, DicoKeyword, GuiControl};
-pub use parser::parse_dico;
+pub use parser::{parse, parse_file};
 
 /// Possibles locales in a Dico file
 const LOCALES: [&str; 2] = ["en", "fr"];
@@ -49,11 +49,51 @@ impl Dico {
     /// Iterator visiting all keywords of the dico
     ///
     pub fn iter<'a>(&'a self) -> Iter<'a> {
-        let base = self.per_locale.get(LOCALES[0]).unwrap();
-        let iter = base.iter();
-        Iter {
-            //base,
-            iter,
+        let english_locale = self.per_locale.get(LOCALES[0]);
+
+        match english_locale {
+            Some(keywords) => Iter {
+                iter: keywords.iter(),
+            },
+            None => Iter {
+                iter: std::collections::hash_map::Iter::default(),
+            },
+        }
+    }
+
+    /// Returns the number of keywords in the dictionary.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use free_surface::config::dicofile::parse;
+    ///
+    /// let dico = parse("").unwrap();
+    /// assert_eq!(dico.len(), 0);
+    /// ```
+    pub fn len(&self) -> usize {
+        let first = self.per_locale.iter().next();
+        match first {
+            Some((_locale, keywords)) => keywords.len(),
+            None => 0,
+        }
+    }
+
+    /// Returns `true` if the dictionary contains no keywords.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use free_surface::config::dicofile::parse;
+    ///
+    /// let dico = parse("").unwrap();
+    /// assert!(dico.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        let first = self.per_locale.iter().next();
+        match first {
+            Some((_locale, keywords)) => keywords.is_empty(),
+            None => true,
         }
     }
 }

@@ -428,12 +428,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn float_len_panics_when_x_longer_than_y() {
         float(vec![1.0, 2.0], vec![1.0]).len();
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn float_len_panics_when_y_longer_than_x() {
         float(vec![1.0], vec![1.0, 2.0]).len();
@@ -459,12 +461,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn double_len_panics_when_x_longer_than_y() {
         double(vec![1.0, 2.0], vec![1.0]).len();
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn double_len_panics_when_y_longer_than_x() {
         double(vec![1.0], vec![1.0, 2.0]).len();
@@ -485,12 +489,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn float_is_empty_panics_when_only_x_is_empty() {
         float(vec![], vec![1.0]).is_empty();
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn float_is_empty_panics_when_only_y_is_empty() {
         float(vec![1.0], vec![]).is_empty();
@@ -511,12 +517,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn double_is_empty_panics_when_only_x_is_empty() {
         double(vec![], vec![1.0]).is_empty();
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn double_is_empty_panics_when_only_y_is_empty() {
         double(vec![1.0], vec![]).is_empty();

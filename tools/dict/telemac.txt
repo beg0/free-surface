@@ -2,8 +2,10 @@ apparence
 bief
 dico
 dynlist
+gouttedo
 ikle
 ipob
+khione
 liste
 mnemo
 nelem
@@ -12,5 +14,8 @@ npoin3
 nbvar
 nplan
 selafin
+sisyphe
+stbtel
 telemac
 tomawac
+waqtel

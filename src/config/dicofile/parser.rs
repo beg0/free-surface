@@ -1,6 +1,9 @@
 //! # Parser of textual telemac dico files
+use num_traits::int::PrimInt;
 use std::collections::HashMap;
+use std::path::Path;
 use std::rc::Rc;
+use std::str::FromStr;
 
 use super::super::configvalue::{parse_single_value_2, parse_value_2, ConfigValue, DicoType};
 use super::super::parse_helpers::unquote_single;
@@ -33,6 +36,15 @@ pub enum DicoParseError {
         got_count: usize,
         expected_count: usize,
     },
+    #[error(
+        "{pos}: Not enough values for field '{field}': got {got_count} but expected at least {expected_count}"
+    )]
+    NotEnoughValues {
+        pos: TextLoc,
+        field: String,
+        got_count: usize,
+        expected_count: usize,
+    },
     #[error("{pos}: Invalid default value '{value}' in field {field}: {reason}")]
     InvalidDefaultValue {
         field: String,
@@ -40,6 +52,13 @@ pub enum DicoParseError {
         reason: String,
         pos: TextLoc,
     },
+    // #[error("{pos}: Duplicated field {field} in block starting at {block_pos}")]
+    // DuplicatedKey {
+    //     field: String,
+    //     pos: TextLoc,
+    //     block_pos: TextLoc,
+    // },
+
     // #[error("{pos}: Inconsistent default values")]
     // InconsistentDefaultValues {
     //     field: String,
@@ -69,105 +88,48 @@ pub enum DicoParseError {
     },
 }
 
-struct BlockParseInfo {
-    val: String,
-    pos: TextLoc,
+fn one_err(e: impl std::error::Error + 'static) -> VecErrorPtr {
+    vec![Box::new(e)]
 }
 
 /// Parse a Telemac dico file
-pub fn parse_dico(input: &str, filename: &str) -> Result<Dico, VecErrorPtr> {
+pub fn parse_file<P: AsRef<Path>>(filename: P) -> Result<Dico, VecErrorPtr> {
+    let content = std::fs::read_to_string(&filename).map_err(one_err)?;
     let file_pos = TextLoc::from((filename, 0));
 
-    let blocks = split_into_blocks(input, &file_pos);
-    let mut keywords: Vec<Rc<DicoKeyword>> = Vec::new();
-    let mut errors: VecErrorPtr = Vec::new();
-
-    for block in blocks {
-        if block.val.trim().is_empty() {
-            continue;
-        }
-        match parse_block(&block.val, &block.pos) {
-            Ok(kw) => {
-                keywords.push(Rc::new(kw));
-            }
-            Err(mut errs) => {
-                errors.append(&mut errs);
-            }
-        }
-    }
-
-    let mut per_locale: HashMap<String, DicoInner> = HashMap::with_capacity(LOCALES.len());
-
-    for locale in LOCALES {
-        let locale = locale.to_owned();
-        let mut inner: DicoInner = HashMap::with_capacity(keywords.len());
-        for kw in &keywords {
-            if let Some(desc) = kw.text_desc.get(&locale) {
-                inner.insert(desc.name.clone(), kw.clone());
-            }
-        }
-
-        per_locale.insert(locale.to_owned(), inner);
-    }
-
-    if errors.is_empty() {
-        Ok(Dico { per_locale })
-    } else {
-        Err(errors)
-    }
+    parse_dico_with_textloc(&content, file_pos)
 }
 
-/// Split the file into blocks delimited by a lone "/" on its own line.
-/// Lines starting with "///" or "////////" are section headers - skip them.
-fn split_into_blocks(input: &str, file_pos: &TextLoc) -> Vec<BlockParseInfo> {
-    let mut blocks: Vec<BlockParseInfo> = Vec::new();
-    let mut current = String::new();
-    let mut start_line = 0;
+/// Parse a Telemac dico from a buffer
+pub fn parse(input: &str) -> Result<Dico, VecErrorPtr> {
+    parse_dico_with_textloc(input, TextLoc::default())
+}
 
-    for (line_idx, line) in input.lines().enumerate() {
-        let trimmed = line.trim();
+fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, VecErrorPtr> {
+    let mut parser = DicoFieldParser {
+        fields: HashMap::new(),
+        block_pos: file_pos.clone(),
+        file_pos,
+        errors: Vec::new(),
+        keywords: Vec::new(),
+    };
 
-        // Section header comments (/// or more slashes) - skip
-        if trimmed.starts_with("///") {
-            continue;
-        }
+    parser.parse_fields(input);
+    parser.finalize_parsing();
 
-        // A lone "/" or "&DYN" marks a block boundary
-        if trimmed == "/" || trimmed == "&DYN" {
-            if !current.trim().is_empty() {
-                blocks.push(BlockParseInfo {
-                    val: current,
-                    pos: file_pos.clone_with_line(start_line + 1),
-                });
-                current = String::new();
-                start_line = line_idx;
-            }
-            continue;
-        }
-
-        // Full-line comments starting with "/" or "#" - skip
-        if trimmed.starts_with('/') || trimmed.starts_with('#') {
-            continue;
-        }
-
-        current.push_str(line);
-        current.push('\n');
+    if parser.errors.is_empty() {
+        Ok(parser.to_dico())
+    } else {
+        Err(parser.errors)
     }
-
-    if !current.trim().is_empty() {
-        blocks.push(BlockParseInfo {
-            val: current,
-            pos: file_pos.clone_with_line(start_line + 1),
-        });
-    }
-
-    blocks
 }
 
 /// Parse a single keyword block into key->raw_value pairs, then build a DicoKeyword.
-fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecErrorPtr> {
+fn parse_block(
+    fields: &HashMap<String, KeywordParseInfo>,
+    block_pos: &TextLoc,
+) -> Result<DicoKeyword, VecErrorPtr> {
     let mut errors = Vec::new();
-    let fields = parse_dico_fields(block, &mut errors, block_pos);
 
     let mut text_desc: HashMap<String, KeywordTextDescription> = HashMap::new();
     let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
@@ -199,24 +161,33 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
         }
     };
 
+    let get_last = |key: &'static str, errors: &mut VecErrorPtr| -> Option<&TokenInfo> {
+        let kpi = fields.get(key)?;
+        let parse_infos = &kpi.values;
+        if parse_infos.is_empty() {
+            errors.push(Box::new(DicoParseError::NotEnoughValues {
+                field: key.to_string(),
+                pos: if parse_infos.len() >= 2 {
+                    parse_infos[1].start_pos.clone()
+                } else {
+                    block_pos.clone()
+                },
+                expected_count: 1,
+                got_count: parse_infos.len(),
+            }));
+
+            None
+        } else {
+            Some(&parse_infos[parse_infos.len() - 1])
+        }
+    };
+
     let get_one = |key: &'static str, errors: &mut VecErrorPtr| -> Option<&TokenInfo> {
         get_n(key, 1, errors).map(|v| &v[0])
     };
 
     let get_val_one = |key: &'static str, errors: &mut VecErrorPtr| -> Option<String> {
         get_one(key, errors).map(|token_info| token_info.token.clone())
-    };
-
-    let get_val_n = |key: &'static str,
-                     expected_count: usize,
-                     errors: &mut VecErrorPtr|
-     -> Option<Vec<String>> {
-        get_n(key, expected_count, errors).map(|token_infos| {
-            token_infos
-                .iter()
-                .map(|token_info| token_info.token.clone())
-                .collect()
-        })
     };
 
     let require_one = |key: &'static str, errors: &mut VecErrorPtr| -> String {
@@ -255,7 +226,7 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
         end_pos: block_pos.clone(),
     };
 
-    let taille = parse_u32_field(
+    let taille: u32 = parse_integer_field(
         "TAILLE",
         get_one("TAILLE", &mut errors).or(Some(&default_taille)),
         &mut errors,
@@ -289,9 +260,10 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
             }
         });
 
-        let classification: [String; 3] = get_val_n(names.4, 3, &mut errors)
-            .map(|values| [values[0].clone(), values[1].clone(), values[2].clone()])
-            .unwrap_or(<[String; 3]>::default());
+        let classification: Vec<String> = fields
+            .get(names.4)
+            .map(|kpi| kpi.values.iter().map(|v| v.token.clone()).collect())
+            .unwrap_or_default();
 
         let choices_text_with_loc = fields
             .get(names.3)
@@ -342,10 +314,10 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     // let mnemo = require_one("MNEMO", &mut errors);
 
     let apparence =
-        get_one("APPARENCE", &mut errors).and_then(|token_info| match token_info.token.as_str() {
-            "LIST" | "LISTE IS EDITABLE" => Some(GuiControl::List),
+        get_last("APPARENCE", &mut errors).and_then(|token_info| match token_info.token.as_str() {
+            "LIST" | "LISTE IS EDITABLE" | "TOMLIST" => Some(GuiControl::List),
             "DYNLIST" => Some(GuiControl::DynList),
-            "DYNLIST2" => Some(GuiControl::MultipleDynList),
+            "DYNLIST2" | "LISTE IS SELECT" => Some(GuiControl::MultipleDynList),
             "TUPLE" => Some(GuiControl::Tuple),
             "FILE_OR_FOLDER" | "LISTE IS FICHIER" => Some(GuiControl::Path),
             other => {
@@ -358,7 +330,7 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
             }
         });
 
-    // let index = parse_u32_field(
+    // let index: u32 = parse_integer_field(
     //     "INDEX",
     //     get_one("INDEX", &mut errors),
     //     &mut errors,
@@ -368,12 +340,10 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     let submit = get_val_one("SUBMIT", &mut errors)
         .map(|s| parse_semicolon_list(&s, false))
         .unwrap_or_default();
-    let niveau = parse_u32_field(
-        "NIVEAU",
-        get_one("NIVEAU", &mut errors),
-        &mut errors,
-        block_pos,
-    );
+
+    let niveau: i32 = get_one("NIVEAU", &mut errors)
+        .map(|token_info| parse_integer_field("NIVEAU", Some(token_info), &mut errors, block_pos))
+        .unwrap_or(1);
 
     let controle = get_n("CONTROLE", 2, &mut errors)
         .and_then(|infos| parse_controle(&infos[0], &infos[1], &mut errors));
@@ -414,54 +384,48 @@ fn parse_block(block: &str, block_pos: &TextLoc) -> Result<DicoKeyword, VecError
     })
 }
 
-struct DicoFieldParser<'a> {
+struct DicoFieldParser {
+    file_pos: TextLoc,
+
+    // Fields of the current block
     fields: HashMap<String, KeywordParseInfo>,
-    block_pos: &'a TextLoc,
-    errors: &'a mut VecErrorPtr,
-    known_keys: [&'static str; 20],
+    // Start postion of the current block
+    block_pos: TextLoc,
+
+    /// All errors encountered during processing
+    pub errors: VecErrorPtr,
+
+    /// All keywords already parsed
+    keywords: Vec<Rc<DicoKeyword>>,
 }
 
-/// Parse "key = value" pairs from a block, handling multiline values.
-/// A new key starts when a line matches "IDENTIFIER = ...".
-fn parse_dico_fields(
-    block: &str,
-    errors: &mut VecErrorPtr,
-    block_pos: &TextLoc,
-) -> HashMap<String, KeywordParseInfo> {
-    let mut parser = DicoFieldParser {
-        fields: HashMap::new(),
-        block_pos,
-        errors,
-        known_keys: [
-            "NOM1",
-            "NOM",
-            "TYPE",
-            "INDEX",
-            "TAILLE",
-            "SUBMIT",
-            "DEFAUT1",
-            "DEFAUT",
-            "MNEMO",
-            "CONTROLE",
-            "CHOIX1",
-            "CHOIX",
-            "APPARENCE",
-            "RUBRIQUE1",
-            "RUBRIQUE",
-            "COMPOSE",
-            "COMPORT",
-            "NIVEAU",
-            "AIDE1",
-            "AIDE",
-        ],
-    };
+const VALID_DICO_KEYS: [&str; 20] = [
+    "NOM1",
+    "NOM",
+    "TYPE",
+    "INDEX",
+    "TAILLE",
+    "SUBMIT",
+    "DEFAUT1",
+    "DEFAUT",
+    "MNEMO",
+    "CONTROLE",
+    "CHOIX1",
+    "CHOIX",
+    "APPARENCE",
+    "RUBRIQUE1",
+    "RUBRIQUE",
+    "COMPOSE",
+    "COMPORT",
+    "NIVEAU",
+    "AIDE1",
+    "AIDE",
+];
 
-    parser.parse_fields(block);
+/// Keys that starts a new block
+const NEW_BLOCK_KEY: [&str; 2] = ["NOM", "NOM1"];
 
-    parser.fields
-}
-
-impl<'a> DamoclesParser for DicoFieldParser<'a> {
+impl DamoclesParser for DicoFieldParser {
     fn error(&mut self, e: ErrorPtr) {
         self.errors.push(e);
     }
@@ -503,13 +467,52 @@ impl<'a> DamoclesParser for DicoFieldParser<'a> {
 
     fn loc(&self, pos: (usize, usize)) -> TextLoc {
         // pos is 1-based, but here we want an offset, so something which is 0-based
-        self.block_pos.clone_with_line_offset_col(pos.0 - 1, pos.1)
+        self.file_pos.clone_with_line_offset_col(pos.0, pos.1)
     }
 
     fn new_field(&mut self, kpi: KeywordParseInfo) {
         let key_upper = normalize_keyword_name(kpi.keyname());
-        if self.known_keys.contains(&key_upper.as_str()) {
-            self.fields.insert(key_upper, kpi);
+        if VALID_DICO_KEYS.contains(&key_upper.as_str()) {
+            if self.fields.is_empty() {
+                self.block_pos = kpi.key.start_pos.clone();
+            }
+
+            let new_block = match self.fields.entry(key_upper.clone()) {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    // Duplicated key, this may means a new block
+
+                    if NEW_BLOCK_KEY.contains(&entry.key().as_str()) {
+                        let mut new_fields = HashMap::new();
+                        let block_pos = kpi.key.start_pos.clone();
+                        new_fields.insert(entry.key().clone(), kpi);
+                        Some((new_fields, block_pos))
+                    } else {
+                        // FIXME: It looks like a good idea to warm the user if a dico contains a duplicated key.
+                        // However, it appears that telemac dico (such as telemac3d.dico or khione.dico) contain
+                        // duplicated key. Thus we must ignore such errors if we want to be 100% compatible with
+                        // telemac
+                        // self.error(Box::new(DicoParseError::DuplicatedKey {
+                        //     field: kpi.key.token.clone(),
+                        //     pos: kpi.key.start_pos.clone(),
+                        //     block_pos: self.block_pos.clone(),
+                        // }));
+                        entry.insert(kpi);
+                        None
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(kpi);
+                    None
+                }
+            };
+
+            if let Some((new_fields, block_pos)) = new_block {
+                self.process_block();
+
+                // Start the new block
+                self.fields = new_fields;
+                self.block_pos = block_pos;
+            }
         } else {
             self.error(Box::new(DicoParseError::UnknownField {
                 field: kpi.key.token.to_string(),
@@ -519,27 +522,69 @@ impl<'a> DamoclesParser for DicoFieldParser<'a> {
     }
 }
 
-fn parse_u32_field(
+impl DicoFieldParser {
+    fn process_block(&mut self) {
+        match parse_block(&self.fields, &self.block_pos) {
+            Ok(keyword) => {
+                self.keywords.push(Rc::new(keyword));
+            }
+            Err(errors) => {
+                self.errors.extend(errors);
+            }
+        }
+    }
+
+    /// Finalize the parser.
+    /// Handle the last block
+    pub fn finalize_parsing(&mut self) {
+        if !self.fields.is_empty() {
+            self.process_block();
+        }
+    }
+
+    pub fn to_dico(&self) -> Dico {
+        let mut per_locale: HashMap<String, DicoInner> = HashMap::with_capacity(LOCALES.len());
+
+        for locale in LOCALES {
+            let locale = locale.to_owned();
+            let mut inner: DicoInner = HashMap::with_capacity(self.keywords.len());
+            for kw in &self.keywords {
+                if let Some(desc) = kw.text_desc.get(&locale) {
+                    inner.insert(desc.name.clone(), kw.clone());
+                }
+            }
+
+            per_locale.insert(locale.to_owned(), inner);
+        }
+
+        Dico { per_locale }
+    }
+}
+
+fn parse_integer_field<T: PrimInt + Default + FromStr>(
     name: &'static str,
     description: Option<&TokenInfo>,
     errors: &mut VecErrorPtr,
     block_pos: &TextLoc,
-) -> u32 {
+) -> T
+where
+    <T as FromStr>::Err: std::fmt::Display,
+{
     match description {
-        Some(desc) => desc.token.trim().parse::<u32>().unwrap_or_else(|_| {
+        Some(desc) => desc.token.trim().parse::<T>().unwrap_or_else(|e| {
             errors.push(Box::new(DicoParseError::InvalidValue {
                 field: name.into(),
-                reason: format!("'{}' is not a valid unsigned integer", desc.token),
+                reason: format!("'{}' is not a valid integer: {:#}", desc.token, e),
                 pos: desc.start_pos.clone(),
             }));
-            0
+            T::default()
         }),
         None => {
             errors.push(Box::new(DicoParseError::MissingField {
                 field: name,
                 pos: block_pos.clone(),
             }));
-            0
+            T::default()
         }
     }
 }

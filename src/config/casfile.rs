@@ -5,6 +5,7 @@
 //!
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use super::configvalue;
 use super::configvalue::ConfigValue;
@@ -12,7 +13,7 @@ use super::dicofile;
 use super::parse_helpers::{
     DamoclesCommandStatus, DamoclesError, DamoclesParser, KeywordParseInfo, TokenInfo,
 };
-use super::textloc::{TextLoc, UNKNOWN_FILE};
+use super::textloc::TextLoc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -80,17 +81,18 @@ impl<'a> Parser<'a> {
 
     /// Read a CAS file and parse it
     #[allow(dead_code)]
-    pub fn parse_from_file(
+    pub fn parse_file<P: AsRef<Path>>(
         &self,
-        filename: &String,
+        filename: P,
     ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
-        match std::fs::read_to_string(filename) {
+        match std::fs::read_to_string(&filename) {
             Ok(cascontent) => {
-                self.parse_from_content_and_filename(cascontent.as_str(), filename.as_str())
+                let file_pos = TextLoc::from((filename, 0));
+                self.parse_from_content_and_textloc(cascontent.as_str(), file_pos)
             }
             Err(error) => {
                 let errors: VecErrorPtr = vec![Box::new(ParseError::FileOpenFailed {
-                    filename: filename.clone(),
+                    filename: filename.as_ref().to_string_lossy().to_string(),
                     error,
                 })];
                 Err(errors)
@@ -101,20 +103,20 @@ impl<'a> Parser<'a> {
     /// Parse a buffer containing the input of a CAS file
     #[allow(dead_code)]
     pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
-        self.parse_from_content_and_filename(input, UNKNOWN_FILE)
+        self.parse_from_content_and_textloc(input, TextLoc::default())
     }
 
-    fn parse_from_content_and_filename(
+    fn parse_from_content_and_textloc(
         &self,
         input: &str,
-        filename: &str,
+        top_pos: TextLoc,
     ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
         // trash previous results
         let mut internal = ParserInternal {
             dico: self.dico,
             result: HashMap::new(),
             errors: Vec::new(),
-            top_pos: TextLoc::from((filename, 1)),
+            top_pos,
         };
         internal.parse_fields(input);
 
@@ -147,11 +149,11 @@ impl<'a> Parser<'a> {
     /// Load a config from a steering file
     ///
     /// Get the full config from a steering file.
-    pub fn config_from_file(
+    pub fn config_from_file<P: AsRef<Path>>(
         &self,
-        filename: &String,
+        filename: P,
     ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
-        let mut config = self.parse_from_file(filename)?;
+        let mut config = self.parse_file(filename)?;
 
         self.fill_missing_fields(&mut config);
         Ok(config)

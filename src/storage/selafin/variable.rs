@@ -4,7 +4,7 @@ use super::container::SlfArray1D;
 use std::collections::HashMap;
 
 /// A Selafin variable
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SlfVariable {
     pub name: String,
     pub unit: String,

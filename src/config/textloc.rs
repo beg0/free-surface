@@ -3,8 +3,10 @@
 //! TextLoc stores a position in a text file
 //!
 
+use std::convert::AsRef;
 use std::convert::From;
 use std::fmt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub const UNKNOWN_FILE: &str = "<unknown>";
@@ -12,38 +14,28 @@ pub const UNKNOWN_FILE: &str = "<unknown>";
 /// A localisation in a text file
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct TextLoc {
-    filename: Arc<String>, // Filename if any, an empty string otherwise
-    line: usize,           // Line number in the file, starting to 1
-    column: usize,         // Column number in the line, starting to 1. 0 if not set
+    filename: Arc<PathBuf>, // Filename if any, an empty string otherwise
+    line: usize,            // Line number in the file, starting to 1
+    column: usize,          // Column number in the line, starting to 1. 0 if not set
 }
 
 // Impl From with filename
 //------------------------
 
-impl From<(&str, usize)> for TextLoc {
-    fn from((filename, line): (&str, usize)) -> Self {
+impl<P: AsRef<Path>> From<(P, usize)> for TextLoc {
+    fn from((filename, line): (P, usize)) -> Self {
         Self {
-            filename: Arc::new(String::from(filename)),
+            filename: Arc::new(PathBuf::from(filename.as_ref())),
             line,
             column: 0,
         }
     }
 }
 
-impl From<(String, usize)> for TextLoc {
-    fn from((filename, line): (String, usize)) -> Self {
+impl<P: AsRef<Path>> From<(P, usize, usize)> for TextLoc {
+    fn from((filename, line, column): (P, usize, usize)) -> Self {
         Self {
-            filename: Arc::new(filename),
-            line,
-            column: 0,
-        }
-    }
-}
-
-impl From<(String, usize, usize)> for TextLoc {
-    fn from((filename, line, column): (String, usize, usize)) -> Self {
-        Self {
-            filename: Arc::new(filename),
+            filename: Arc::new(PathBuf::from(filename.as_ref())),
             line,
             column,
         }
@@ -56,31 +48,22 @@ impl From<(String, usize, usize)> for TextLoc {
 impl From<usize> for TextLoc {
     fn from(line: usize) -> Self {
         Self {
-            filename: Arc::new(String::new()),
+            filename: Arc::new(PathBuf::new()),
             line,
             column: 0,
         }
     }
 }
 
-impl From<(usize, usize)> for TextLoc {
-    fn from((line, column): (usize, usize)) -> Self {
-        Self {
-            filename: Arc::new(String::new()),
-            line,
-            column,
-        }
-    }
-}
-
 // fmt::Display
-
 impl fmt::Display for TextLoc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let filename = if self.filename.is_empty() {
-            UNKNOWN_FILE
+        let native_filename = self.filename.as_os_str();
+
+        let filename = if native_filename.is_empty() {
+            String::from(UNKNOWN_FILE)
         } else {
-            self.filename.as_str()
+            format!("{}", native_filename.display())
         };
 
         if self.column == 0 {
@@ -133,7 +116,7 @@ impl TextLoc {
 
     /// Get the filename associated with this position
     #[allow(dead_code)]
-    pub fn filename(&self) -> &String {
+    pub fn filename(&self) -> &PathBuf {
         #[allow(clippy::explicit_auto_deref)]
         &*self.filename
     }

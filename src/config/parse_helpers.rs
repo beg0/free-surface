@@ -8,12 +8,6 @@ mod locatedchars;
 
 pub use damocles::*;
 
-#[cfg(test)]
-mod tests {
-    mod parse_fortran_float;
-    mod unquote_single;
-}
-
 /// Quote a string only if necessary, using single-quote with doubling escapes.
 ///
 /// The quoting rules are:
@@ -46,14 +40,14 @@ mod tests {
 /// // Multiple consecutive single quotes
 /// assert_eq!(single_quote_if_needed("''"),             "''''''");
 ///
-/// // Empty string - no whitespace, no quotes, returned as-is
-/// assert_eq!(single_quote_if_needed(""),               "");
+/// // Empty string get quoted
+/// assert_eq!(single_quote_if_needed(""),               "''");
 ///
 /// // Already looks quoted - treated as plain text, not double-quoted
 /// assert_eq!(single_quote_if_needed("'hello'"),        "'''hello'''");
 /// ```
 pub fn single_quote_if_needed(s: &str) -> String {
-    let needs_quoting = s.contains(|c: char| c.is_whitespace() || c == '\'');
+    let needs_quoting = s.is_empty() || s.contains(|c: char| c.is_whitespace() || c == '\'');
 
     if !needs_quoting {
         return s.to_string();
@@ -215,4 +209,10 @@ pub fn write_fortran_float(v: f64) -> String {
 
     let exp: i32 = exp_str.parse().unwrap();
     format!("{mantissa}E{:+03}", exp) // {:+03} -> sign + at least 2 digits
+}
+
+#[cfg(test)]
+mod tests {
+    mod parse_fortran_float;
+    mod unquote_single;
 }

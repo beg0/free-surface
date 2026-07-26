@@ -21,6 +21,7 @@ fn test_plain_integer_looking() {
 
 #[test]
 fn test_plain_decimal() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float("3.14"), 3.14);
 }
 
@@ -36,11 +37,13 @@ fn test_trailing_dot() {
 
 #[test]
 fn test_negative() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float("-3.14"), -3.14);
 }
 
 #[test]
 fn test_positive_sign() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float("+3.14"), 3.14);
 }
 
@@ -74,6 +77,7 @@ fn test_e_exponent_negative() {
 
 #[test]
 fn test_e_exponent_zero() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float("3.14E0"), 3.14);
 }
 
@@ -89,11 +93,13 @@ fn test_e_lowercase() {
 
 #[test]
 fn test_e_no_decimal_in_mantissa() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float("314E-2"), 3.14);
 }
 
 #[test]
 fn test_e_leading_dot_mantissa() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float(".314E1"), 3.14);
 }
 
@@ -126,6 +132,7 @@ fn test_d_exponent_negative() {
 
 #[test]
 fn test_d_exponent_zero() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float("3.14D0"), 3.14);
 }
 
@@ -141,11 +148,13 @@ fn test_d_lowercase() {
 
 #[test]
 fn test_d_no_decimal_in_mantissa() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float("314D-2"), 3.14);
 }
 
 #[test]
 fn test_d_leading_dot_mantissa() {
+    #[allow(clippy::approx_constant)]
     assert_float_eq(parse_fortran_float(".314D1"), 3.14);
 }
 

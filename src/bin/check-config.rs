@@ -103,13 +103,6 @@ fn one_err(e: impl std::error::Error + 'static) -> Errors {
 // Business logic
 // ---------------------------------------------------------------------------
 
-fn load_dico(path: &PathBuf) -> Result<Dico, Errors> {
-    let content = std::fs::read_to_string(path).map_err(one_err)?;
-
-    let path_str = path.to_string_lossy();
-    config::dicofile::parse_dico(&content, &path_str)
-}
-
 #[derive(Debug)]
 enum SectionEntry<'a> {
     SubSection {
@@ -280,13 +273,13 @@ fn dump_config(
 }
 
 fn run(args: &Args) -> Result<(), Errors> {
-    let dico = load_dico(&args.dico)?;
+    let dico = config::dicofile::parse_file(&args.dico)?;
     let parser = config::casfile::Parser::new(&dico);
 
     let config = if args.full_dump {
         parser.config_from_file(&args.config)
     } else {
-        parser.parse_from_file(&args.config)
+        parser.parse_file(&args.config)
     }?;
 
     if args.dump || args.full_dump {
