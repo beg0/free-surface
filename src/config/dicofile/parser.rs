@@ -322,7 +322,7 @@ fn parse_block(
         .map(|s| parse_semicolon_list(&s, false))
         .unwrap_or_default();
 
-    let niveau: u32 = get_one("NIVEAU", &mut errors)
+    let niveau: i32 = get_one("NIVEAU", &mut errors)
         .map(|token_info| parse_integer_field("NIVEAU", Some(token_info), &mut errors, block_pos))
         .unwrap_or(1);
 

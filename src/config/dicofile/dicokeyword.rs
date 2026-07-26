@@ -68,7 +68,7 @@ pub struct DicoKeyword {
     pub selection_control: Option<GuiControl>, // Which GUI control widget to use for this entry
     pub compose: Option<String>,               // Unused in free-surface
     pub comport: Option<String>,               // Unused in free-surface
-    pub level: u32,                            // 0 = mandatory
+    pub level: i32,                            // 0 = mandatory
 }
 
 impl DicoKeyword {
