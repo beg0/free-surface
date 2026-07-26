@@ -261,6 +261,7 @@ dependencies = [
  "chrono",
  "clap",
  "indoc",
+ "num-traits",
  "regex",
  "serde",
  "serde_json",

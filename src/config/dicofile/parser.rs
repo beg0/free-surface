@@ -1,7 +1,9 @@
 //! # Parser of textual telemac dico files
+use num_traits::int::PrimInt;
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
+use std::str::FromStr;
 
 use super::super::configvalue::{parse_single_value_2, parse_value_2, ConfigValue, DicoType};
 use super::super::parse_helpers::unquote_single;
@@ -206,7 +208,7 @@ fn parse_block(
         end_pos: block_pos.clone(),
     };
 
-    let taille = parse_u32_field(
+    let taille: u32 = parse_integer_field(
         "TAILLE",
         get_one("TAILLE", &mut errors).or(Some(&default_taille)),
         &mut errors,
@@ -309,7 +311,7 @@ fn parse_block(
             }
         });
 
-    // let index = parse_u32_field(
+    // let index: u32 = parse_integer_field(
     //     "INDEX",
     //     get_one("INDEX", &mut errors),
     //     &mut errors,
@@ -319,12 +321,10 @@ fn parse_block(
     let submit = get_val_one("SUBMIT", &mut errors)
         .map(|s| parse_semicolon_list(&s, false))
         .unwrap_or_default();
-    let niveau = parse_u32_field(
-        "NIVEAU",
-        get_one("NIVEAU", &mut errors),
-        &mut errors,
-        block_pos,
-    );
+
+    let niveau: u32 = get_one("NIVEAU", &mut errors)
+        .map(|token_info| parse_integer_field("NIVEAU", Some(token_info), &mut errors, block_pos))
+        .unwrap_or(1);
 
     let controle = get_n("CONTROLE", 2, &mut errors)
         .and_then(|infos| parse_controle(&infos[0], &infos[1], &mut errors));
@@ -542,27 +542,30 @@ impl DicoFieldParser {
     }
 }
 
-fn parse_u32_field(
+fn parse_integer_field<T: PrimInt + Default + FromStr>(
     name: &'static str,
     description: Option<&TokenInfo>,
     errors: &mut VecErrorPtr,
     block_pos: &TextLoc,
-) -> u32 {
+) -> T
+where
+    <T as FromStr>::Err: std::fmt::Display,
+{
     match description {
-        Some(desc) => desc.token.trim().parse::<u32>().unwrap_or_else(|_| {
+        Some(desc) => desc.token.trim().parse::<T>().unwrap_or_else(|e| {
             errors.push(Box::new(DicoParseError::InvalidValue {
                 field: name.into(),
-                reason: format!("'{}' is not a valid unsigned integer", desc.token),
+                reason: format!("'{}' is not a valid integer: {:#}", desc.token, e),
                 pos: desc.start_pos.clone(),
             }));
-            0
+            T::default()
         }),
         None => {
             errors.push(Box::new(DicoParseError::MissingField {
                 field: name,
                 pos: block_pos.clone(),
             }));
-            0
+            T::default()
         }
     }
 }
