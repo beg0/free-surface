@@ -160,18 +160,6 @@ fn parse_block(
         get_one(key, errors).map(|token_info| token_info.token.clone())
     };
 
-    let get_val_n = |key: &'static str,
-                     expected_count: usize,
-                     errors: &mut VecErrorPtr|
-     -> Option<Vec<String>> {
-        get_n(key, expected_count, errors).map(|token_infos| {
-            token_infos
-                .iter()
-                .map(|token_info| token_info.token.clone())
-                .collect()
-        })
-    };
-
     let require_one = |key: &'static str, errors: &mut VecErrorPtr| -> String {
         match get_one(key, errors) {
             Some(token_info) => token_info.token.clone(),
@@ -242,9 +230,10 @@ fn parse_block(
             }
         });
 
-        let classification: [String; 3] = get_val_n(names.4, 3, &mut errors)
-            .map(|values| [values[0].clone(), values[1].clone(), values[2].clone()])
-            .unwrap_or(<[String; 3]>::default());
+        let classification: Vec<String> = fields
+            .get(names.4)
+            .map(|kpi| kpi.values.iter().map(|v| v.token.clone()).collect())
+            .unwrap_or_default();
 
         let choices_text_with_loc = fields
             .get(names.3)
