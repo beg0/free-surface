@@ -36,6 +36,15 @@ pub enum DicoParseError {
         got_count: usize,
         expected_count: usize,
     },
+    #[error(
+        "{pos}: Not enough values for field '{field}': got {got_count} but expected at least {expected_count}"
+    )]
+    NotEnoughValues {
+        pos: TextLoc,
+        field: String,
+        got_count: usize,
+        expected_count: usize,
+    },
     #[error("{pos}: Invalid default value '{value}' in field {field}: {reason}")]
     InvalidDefaultValue {
         field: String,
@@ -149,6 +158,27 @@ fn parse_block(
             None
         } else {
             Some(parse_infos)
+        }
+    };
+
+    let get_last = |key: &'static str, errors: &mut VecErrorPtr| -> Option<&TokenInfo> {
+        let kpi = fields.get(key)?;
+        let parse_infos = &kpi.values;
+        if parse_infos.is_empty() {
+            errors.push(Box::new(DicoParseError::NotEnoughValues {
+                field: key.to_string(),
+                pos: if parse_infos.len() >= 2 {
+                    parse_infos[1].start_pos.clone()
+                } else {
+                    block_pos.clone()
+                },
+                expected_count: 1,
+                got_count: parse_infos.len(),
+            }));
+
+            None
+        } else {
+            Some(&parse_infos[parse_infos.len() - 1])
         }
     };
 
@@ -284,7 +314,7 @@ fn parse_block(
     // let mnemo = require_one("MNEMO", &mut errors);
 
     let apparence =
-        get_one("APPARENCE", &mut errors).and_then(|token_info| match token_info.token.as_str() {
+        get_last("APPARENCE", &mut errors).and_then(|token_info| match token_info.token.as_str() {
             "LIST" | "LISTE IS EDITABLE" => Some(GuiControl::List),
             "DYNLIST" => Some(GuiControl::DynList),
             "DYNLIST2" => Some(GuiControl::MultipleDynList),
