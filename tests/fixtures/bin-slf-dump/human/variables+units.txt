@@ -1,0 +1,6 @@
+
+[variables]
+variables:
+    name      unit  kind
+    --------  ----  ------
+    MAILLAGE        linear
