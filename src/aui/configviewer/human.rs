@@ -118,7 +118,7 @@ where
             .map(|(i, h)| format!("{:width$}", h, width = widths[i]))
             .collect::<Vec<_>>()
             .join("  ");
-        let painted_header_line = paint(self.palette.header, header_line.as_str());
+        let painted_header_line = paint(self.palette.header, header_line.trim_end());
         let sep: String = widths
             .iter()
             .map(|&w| "-".repeat(w))
