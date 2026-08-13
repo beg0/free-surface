@@ -163,21 +163,21 @@ fn render_title(e: &mut dyn ConfigViewer, slf: &Selafin) {
 }
 
 fn render_npoints(e: &mut dyn ConfigViewer, slf: &Selafin) {
-    e.emit_section_start("npoints");
+    //e.emit_section_start("npoints");
     e.emit_kv("npoints", &json!(&slf.geometry().points_count()));
-    e.emit_section_end();
+    //e.emit_section_end();
 }
 
 fn render_nelements(e: &mut dyn ConfigViewer, slf: &Selafin) {
-    e.emit_section_start("nelements");
+    //e.emit_section_start("nelements");
     e.emit_kv("nelements", &json!(&slf.geometry().elements_count()));
-    e.emit_section_end();
+    //e.emit_section_end();
 }
 
 fn render_nlayers(e: &mut dyn ConfigViewer, slf: &Selafin) {
-    e.emit_section_start("nlayers");
+    //e.emit_section_start("nlayers");
     e.emit_kv("nlayers", &json!(&slf.geometry().planes_cnt()));
-    e.emit_section_end();
+    //e.emit_section_end();
 }
 
 fn render_variables(e: &mut dyn ConfigViewer, slf: &Selafin, with_units: bool) {
@@ -287,7 +287,7 @@ fn render_elements(e: &mut dyn ConfigViewer, slf: &Selafin, layer: Option<usize>
 }
 
 fn render_datetime(e: &mut dyn ConfigViewer, slf: &Selafin) {
-    e.emit_section_start("datetime");
+    //e.emit_section_start("datetime");
     match slf.datetime() {
         Some(dt) => e.emit_kv(
             "datetime",
@@ -295,7 +295,7 @@ fn render_datetime(e: &mut dyn ConfigViewer, slf: &Selafin) {
         ),
         None => e.emit_kv("datetime", &JsonValue::Null),
     }
-    e.emit_section_end();
+    //e.emit_section_end();
 }
 
 fn render_results(e: &mut dyn ConfigViewer, slf: &Selafin) {
