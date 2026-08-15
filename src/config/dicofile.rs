@@ -25,7 +25,7 @@ type DicoInner = HashMap<String, Rc<DicoKeyword>>;
 /// The content of the dico depend on which Telemac program is run (Telemac2D,
 /// Telemac3D, Artemis, Tomawac...).
 ///
-/// Dico can be created with [parse] or [parse_file].
+/// Dico can be created with [parser::parse] or [parser::parse_file].
 pub struct Dico {
     /// Each keywords, indexed per locale
     per_locale: HashMap<String, DicoInner>,
