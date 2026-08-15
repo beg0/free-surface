@@ -131,7 +131,7 @@ impl SlfArray2D {
         }
     }
 
-    /// Convert a SlfArray2D into a pair of Vec<f64>
+    /// Convert a SlfArray2D into a pair of `Vec<f64>`
     ///
     /// Do not consume the SlfArray2D
     pub fn to_vec(&self) -> (Vec<f64>, Vec<f64>) {
