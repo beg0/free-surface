@@ -1,0 +1,11 @@
+{
+  "variables": {
+    "variables": [
+      {
+        "kind": "linear",
+        "name": "MAILLAGE",
+        "unit": ""
+      }
+    ]
+  }
+}
