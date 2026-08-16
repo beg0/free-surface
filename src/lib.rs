@@ -11,6 +11,7 @@
 pub mod aui;
 pub mod config;
 pub mod i18n;
+pub mod math;
 pub mod storage;
 pub mod utils;
 
