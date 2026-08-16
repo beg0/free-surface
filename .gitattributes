@@ -24,3 +24,4 @@ tests/fixtures/bin-slf-dump/damocles/elements:layer=0.cas filter=lfs diff=lfs me
 tests/fixtures/bin-slf-dump/human/elements:layer=0.txt filter=lfs diff=lfs merge=lfs -text
 tests/fixtures/bin-slf-dump/human/elements.txt filter=lfs diff=lfs merge=lfs -text
 *.slf filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/geo_gouttedo.neighbors.json filter=lfs diff=lfs merge=lfs -text
