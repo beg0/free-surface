@@ -1,5 +1,7 @@
 //! # Mathematical operations for free-surface
 //!
+pub mod backend;
+pub mod bief;
 
 /// Coordinate of a 3D points
 pub struct Point3f {
