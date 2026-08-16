@@ -99,6 +99,12 @@ impl Selafin {
     }
 }
 
+impl From<Selafin> for SlfGeometry {
+    fn from(value: Selafin) -> Self {
+        value.geo
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
