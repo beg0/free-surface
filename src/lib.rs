@@ -10,5 +10,6 @@
 
 pub mod aui;
 pub mod config;
+pub mod math;
 pub mod storage;
 pub mod utils;
