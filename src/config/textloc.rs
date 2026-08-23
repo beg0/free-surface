@@ -14,9 +14,14 @@ pub const UNKNOWN_FILE: &str = "<unknown>";
 /// A localisation in a text file
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct TextLoc {
-    filename: Arc<PathBuf>, // Filename if any, an empty string otherwise
-    line: usize,            // Line number in the file, starting to 1
-    column: usize,          // Column number in the line, starting to 1. 0 if not set
+    /// Filename if any, an empty string otherwise
+    filename: Arc<PathBuf>,
+
+    /// Line number in the file, starting to 1
+    line: usize,
+
+    /// Column number in the line, starting to 1. 0 if not set
+    column: usize,
 }
 
 // Impl From with filename
