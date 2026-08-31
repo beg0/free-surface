@@ -365,6 +365,14 @@ fn parse_block(
         }
     }
 
+    let compose = get_val_one("COMPOSE", &mut errors);
+    let comport = fields.get("COMPORT").map(|kpi| {
+        kpi.values
+            .iter()
+            .map(|token_info| token_info.token.clone())
+            .collect()
+    });
+
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -378,8 +386,8 @@ fn parse_block(
         // mnemo,
         boundaries: controle,
         selection_control: apparence,
-        compose: get_val_one("COMPOSE", &mut errors),
-        comport: get_val_one("COMPORT", &mut errors),
+        compose,
+        comport,
         level: niveau,
     })
 }

@@ -67,7 +67,7 @@ pub struct DicoKeyword {
     pub boundaries: Option<(f64, f64)>,        // min;max
     pub selection_control: Option<GuiControl>, // Which GUI control widget to use for this entry
     pub compose: Option<String>,               // Unused in free-surface
-    pub comport: Option<String>,               // Unused in free-surface
+    pub comport: Option<Vec<String>>,          // Unused in free-surface
     pub level: i32,                            // 0 = mandatory
 }
 
