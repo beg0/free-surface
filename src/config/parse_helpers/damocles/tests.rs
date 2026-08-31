@@ -1,7 +1,8 @@
 //! # Unit tests for config::parse_helpers::parse_fields
-use super::super::{
-    DamoclesCommandStatus, DamoclesError, DamoclesParser, KeywordParseInfo, TokenInfo,
-};
+use std::assert_matches;
+
+use super::super::{DamoclesCommandStatus, DamoclesParser, KeywordParseInfo, TokenInfo};
+use crate::aui::diagnostic::collector::{Severity, TextParserDiagnostics};
 use crate::config::textloc::TextLoc;
 
 //-------------------
@@ -14,7 +15,7 @@ use crate::config::textloc::TextLoc;
 struct DamoclesTester {
     fields: Vec<KeywordParseInfo>,
     commands: Vec<TokenInfo>,
-    errors: Vec<Box<dyn std::error::Error>>,
+    diag: TextParserDiagnostics,
 }
 
 impl DamoclesParser for DamoclesTester {
@@ -23,13 +24,13 @@ impl DamoclesParser for DamoclesTester {
         self.fields.push(kpi);
     }
 
-    fn cmd(&mut self, cmd: TokenInfo) -> Result<DamoclesCommandStatus, Box<dyn std::error::Error>> {
+    fn cmd(&mut self, cmd: TokenInfo) -> Option<DamoclesCommandStatus> {
         self.commands.push(cmd);
-        Ok(DamoclesCommandStatus::Success) // Todo test error cases
+        Some(DamoclesCommandStatus::Success) // Todo test error cases
     }
 
-    fn error(&mut self, e: Box<dyn std::error::Error>) {
-        self.errors.push(e);
+    fn diag(&mut self) -> &mut TextParserDiagnostics {
+        &mut self.diag
     }
 
     fn loc(&self, pos: (usize, usize)) -> TextLoc {
@@ -42,24 +43,22 @@ fn collect_fields_without_errors(input: &str) -> Vec<KeywordParseInfo> {
     let mut tester = DamoclesTester::default();
 
     tester.parse_fields(input);
-    if !tester.errors.is_empty() {
-        dbg!(&tester.errors);
+    if tester.diag.has_errors(false) {
+        dbg!(&tester.diag.all());
     }
 
-    assert!(tester.errors.is_empty());
+    assert!(!tester.diag.has_errors(false));
 
     tester.fields
 }
 /// Collect all (key, value, loc) triples produced by parse_fields
 /// as well as errors
-fn collect_fields_with_errors(
-    input: &str,
-) -> (Vec<KeywordParseInfo>, Vec<Box<dyn std::error::Error>>) {
+fn collect_fields_with_errors(input: &str) -> (Vec<KeywordParseInfo>, TextParserDiagnostics) {
     let mut tester = DamoclesTester::default();
 
     tester.parse_fields(input);
 
-    (tester.fields, tester.errors)
+    (tester.fields, tester.diag)
 }
 /// Collect all (key, value, loc) triples produced by parse_fields
 /// as well as commands
@@ -153,9 +152,9 @@ fn test_whitespace_only_produces_no_fields() {
 
 #[test]
 fn test_empty_value() {
-    let (fields, errors) = collect_fields_with_errors("KEY =");
+    let (fields, diagnostics) = collect_fields_with_errors("KEY =");
     assert_eq!(fields.len(), 0);
-    assert_eq!(errors.len(), 1);
+    assert_eq!(diagnostics.all().len(), 1);
 }
 
 #[test]
@@ -339,34 +338,36 @@ fn test_two_assignment_on_the_same_line() {
 #[test]
 fn test_value_with_equals_sign() {
     // '=' in the value part should not start a new key
-    let (fields, mut errors) = collect_fields_with_errors("KEY = a=b=c");
+    let (fields, diagnostics) = collect_fields_with_errors("KEY = a=b=c");
     assert_eq!(fields.len(), 2);
-    assert_eq!(errors.len(), 1);
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<DamoclesError>());
-    let parse_error: Box<DamoclesError> = err0.downcast().expect("not a ParseFieldsErrors");
+    assert_eq!(diagnostics.all().len(), 1);
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
 
-    assert!(matches!(
-        *parse_error,
-        DamoclesError::UnexpectedAssignment { .. }
-    ));
+    assert_matches!(diag0.severity, Severity::Error);
+
+    assert!(diag0.message.contains("Unexpected assignment"));
 }
 
 #[test]
 fn test_continuation_line_before_any_key_is_ignored() {
     // Lines before the first key have no current_key, so they are dropped
     let input = "orphan line\nKEY = value";
-    let (fields, mut errors) = collect_fields_with_errors(input);
+    let (fields, diagnostics) = collect_fields_with_errors(input);
     assert_eq!(fields.len(), 1);
-    assert_eq!(errors.len(), 1);
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<DamoclesError>());
-    let parse_error: Box<DamoclesError> = err0.downcast().expect("not a ParseFieldsErrors");
+    assert_eq!(diagnostics.all().len(), 1);
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
 
-    assert!(matches!(
-        *parse_error,
-        DamoclesError::MissingAssignment { .. }
-    ));
+    assert_matches!(diag0.severity, Severity::Error);
+
+    assert!(diag0
+        .message
+        .contains("Unexpected token, expected assignment"));
 }
 
 #[test]
