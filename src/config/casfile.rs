@@ -15,6 +15,8 @@ use super::parse_helpers::{
 };
 use super::textloc::TextLoc;
 
+use crate::aui::diagnostic::TextParserDiagnostics;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     #[error("Can't open file {filename} for reading: {error}")]
@@ -22,45 +24,33 @@ pub enum ParseError {
         filename: String,
         error: std::io::Error,
     },
-    #[error("{pos}: Unknown key: '{key}'")]
-    UnknownKey { pos: TextLoc, key: String },
-    #[error("{pos}: Invalid value for key '{key}': {reason}")]
-    InvalidValue {
-        pos: TextLoc,
-        key: String,
-        reason: String,
-    },
-    #[error(
-        "{pos}: Too much values for key '{key}': got {got_count} but expected {expected_count}"
-    )]
+    #[error("Unknown key: '{key}'")]
+    UnknownKey { key: String },
+    #[error("Invalid value for key '{key}': {reason}")]
+    InvalidValue { key: String, reason: String },
+    #[error("Too much values for key '{key}': got {got_count} but expected {expected_count}")]
     TooMuchValues {
-        pos: TextLoc,
         key: String,
         got_count: usize,
         expected_count: usize,
     },
     #[error(
-        "{pos}: Value out of bound for key {key}: value should be between {min} and {max}, got '{value}'"
+        "Value out of bound for key {key}: value should be between {min} and {max}, got '{value}'"
     )]
     OutOfBound {
-        pos: TextLoc,
         key: String,
         value: String,
         min: f64,
         max: f64,
     },
-    #[error("{pos}: Invalid value for key {key}: {reason}")]
+    #[error("Invalid value for key {key}: {reason}")]
     BadChoice {
-        pos: TextLoc,
         key: String,
         value: String,
         #[source]
         reason: dicofile::ChoiceValidationError,
     },
 }
-
-type ErrorPtr = Box<dyn std::error::Error>;
-type VecErrorPtr = Vec<ErrorPtr>;
 
 pub struct Parser<'a> {
     /// Map of normalized (uppercase) key -> expected type
@@ -71,7 +61,7 @@ struct ParserInternal<'a> {
     dico: &'a dicofile::Dico,
     top_pos: TextLoc,
     result: HashMap<String, ConfigValue>,
-    errors: VecErrorPtr,
+    diag: TextParserDiagnostics,
 }
 
 impl<'a> Parser<'a> {
@@ -84,25 +74,21 @@ impl<'a> Parser<'a> {
     pub fn parse_file<P: AsRef<Path>>(
         &self,
         filename: P,
-    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
-        match std::fs::read_to_string(&filename) {
-            Ok(cascontent) => {
-                let file_pos = TextLoc::from((filename, 0));
-                self.parse_from_content_and_textloc(cascontent.as_str(), file_pos)
-            }
-            Err(error) => {
-                let errors: VecErrorPtr = vec![Box::new(ParseError::FileOpenFailed {
-                    filename: filename.as_ref().to_string_lossy().to_string(),
-                    error,
-                })];
-                Err(errors)
-            }
-        }
+    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+        let file_pos = TextLoc::from((&filename, 0));
+
+        let cascontent = std::fs::read_to_string(&filename).map_err(|err| {
+            TextParserDiagnostics::from_single_error(err.to_string(), file_pos.clone())
+        })?;
+        self.parse_from_content_and_textloc(cascontent.as_str(), file_pos)
     }
 
     /// Parse a buffer containing the input of a CAS file
     #[allow(dead_code)]
-    pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
+    pub fn parse(
+        &self,
+        input: &str,
+    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
         self.parse_from_content_and_textloc(input, TextLoc::default())
     }
 
@@ -110,20 +96,20 @@ impl<'a> Parser<'a> {
         &self,
         input: &str,
         top_pos: TextLoc,
-    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
+    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
         // trash previous results
         let mut internal = ParserInternal {
             dico: self.dico,
             result: HashMap::new(),
-            errors: Vec::new(),
+            diag: TextParserDiagnostics::default(),
             top_pos,
         };
         internal.parse_fields(input);
 
-        if internal.errors.is_empty() {
-            Ok(internal.result)
+        if internal.diag.has_errors(false) {
+            Err(internal.diag)
         } else {
-            Err(internal.errors)
+            Ok(internal.result)
         }
     }
 
@@ -139,7 +125,7 @@ impl<'a> Parser<'a> {
     pub fn config_from_content(
         &self,
         input: &str,
-    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
+    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
         let mut config = self.parse(input)?;
 
         self.fill_missing_fields(&mut config);
@@ -152,7 +138,7 @@ impl<'a> Parser<'a> {
     pub fn config_from_file<P: AsRef<Path>>(
         &self,
         filename: P,
-    ) -> Result<HashMap<String, ConfigValue>, VecErrorPtr> {
+    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
         let mut config = self.parse_file(filename)?;
 
         self.fill_missing_fields(&mut config);
@@ -161,11 +147,11 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> DamoclesParser for ParserInternal<'a> {
-    fn error(&mut self, e: ErrorPtr) {
-        self.errors.push(e);
+    fn diag(&mut self) -> &mut TextParserDiagnostics {
+        &mut self.diag
     }
 
-    fn cmd(&mut self, cmd: TokenInfo) -> Result<DamoclesCommandStatus, Box<dyn std::error::Error>> {
+    fn cmd(&mut self, cmd: TokenInfo) -> Option<DamoclesCommandStatus> {
         let mut exit_code = DamoclesCommandStatus::Success;
 
         // TODO: better processing of "ETA" & "IND" command.
@@ -188,10 +174,11 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
                 dbg!(&self.result);
             }
             "STO" => {
-                return Err(Box::new(DamoclesError::StopCommand {
-                    cmd: cmd.token,
-                    pos: cmd.start_pos,
-                }));
+                self.diag.error(
+                    DamoclesError::StopCommand { cmd: cmd.token }.to_string(),
+                    cmd.start_pos,
+                );
+                return None;
             }
             "FIN" => {
                 exit_code = DamoclesCommandStatus::Exit;
@@ -200,14 +187,15 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
                 eprintln!("cmd DOC is deprecated");
             }
             _ => {
-                return Err(Box::new(DamoclesError::UnknownCommand {
-                    cmd: cmd.token,
-                    pos: cmd.start_pos,
-                }));
+                self.diag.error(
+                    DamoclesError::UnknownCommand { cmd: cmd.token }.to_string(),
+                    cmd.start_pos,
+                );
+                return None;
             }
         };
 
-        Ok(exit_code)
+        Some(exit_code)
     }
 
     fn loc(&self, pos: (usize, usize)) -> TextLoc {
@@ -216,10 +204,13 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
 
     fn new_field(&mut self, mut kpi: KeywordParseInfo) {
         let Some(keyword) = self.dico.get(kpi.keyname()) else {
-            self.error(Box::new(ParseError::UnknownKey {
-                pos: kpi.key.start_pos.clone(),
-                key: kpi.key.token.clone(),
-            }));
+            self.diag.error(
+                ParseError::UnknownKey {
+                    key: kpi.key.token.clone(),
+                }
+                .to_string(),
+                kpi.key.start_pos.clone(),
+            );
             return;
         };
 
@@ -227,24 +218,20 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
         kpi.fix_list(&keyword.type_, nargs);
         let value_parse_infos = &mut kpi.values;
 
-        let parse_result = configvalue::parse_value_2::<ErrorPtr, _>(
-            value_parse_infos,
-            &keyword.type_,
-            nargs,
-            |entry, reason| {
-                Box::new(ParseError::InvalidValue {
-                    pos: entry.start_pos.clone(),
-                    key: kpi.key.token.clone(),
-                    reason,
-                })
-            },
-        );
+        let parse_result = configvalue::parse_value_2(value_parse_infos, &keyword.type_, nargs);
 
         let value = match parse_result {
             Ok(v) => v,
-            Err(errs) => {
-                for e in errs {
-                    self.error(e);
+            Err(errors) => {
+                for (entry, reason) in errors {
+                    self.diag.error(
+                        ParseError::InvalidValue {
+                            key: kpi.key.token.clone(),
+                            reason,
+                        }
+                        .to_string(),
+                        entry.start_pos.clone(),
+                    );
                 }
                 return;
             }
@@ -255,13 +242,16 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             let nb_of_failures = failures.len();
             for failed_index in failures {
                 if let Some(failed_value) = value_parse_infos.get(failed_index) {
-                    self.error(Box::new(ParseError::OutOfBound {
-                        pos: failed_value.start_pos.clone(),
-                        key: kpi.key.token.clone(),
-                        value: failed_value.token.clone(),
-                        min: boundaries.0,
-                        max: boundaries.1,
-                    }));
+                    self.diag.error(
+                        ParseError::OutOfBound {
+                            key: kpi.key.token.clone(),
+                            value: failed_value.token.clone(),
+                            min: boundaries.0,
+                            max: boundaries.1,
+                        }
+                        .to_string(),
+                        failed_value.start_pos.clone(),
+                    );
                 }
             }
             if nb_of_failures > 0 {
@@ -274,12 +264,15 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             Err(failures) => {
                 for (failed_index, reason) in failures {
                     if let Some(failed_value) = value_parse_infos.get(failed_index) {
-                        self.error(Box::new(ParseError::BadChoice {
-                            key: kpi.key.token.clone(),
-                            pos: failed_value.start_pos.clone(),
-                            value: failed_value.token.clone(),
-                            reason,
-                        }));
+                        self.diag.error(
+                            ParseError::BadChoice {
+                                key: kpi.key.token.clone(),
+                                value: failed_value.token.clone(),
+                                reason,
+                            }
+                            .to_string(),
+                            failed_value.start_pos.clone(),
+                        );
                     }
                 }
                 return;

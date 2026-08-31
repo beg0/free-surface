@@ -9,6 +9,7 @@ use std::str::FromStr;
 use clap::Parser;
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
+use free_surface::aui::diagnostic::{Severity, TextParserDiagnostics};
 use free_surface::aui::Format;
 use free_surface::config::configvalue::ConfigValue;
 use free_surface::config::dicofile::DicoKeyword;
@@ -272,20 +273,44 @@ fn dump_config(
     Ok(())
 }
 
-fn run(args: &Args) -> Result<(), Errors> {
-    let dico = config::dicofile::parse_file(&args.dico)?;
+fn run(args: &Args) -> Result<usize, Errors> {
+    let dico = match config::dicofile::parse_file(&args.dico) {
+        Ok(dico) => dico,
+        Err(diag) => {
+            print_diagnostics(&diag);
+            return Ok(diag.all().len());
+        }
+    };
+
     let parser = config::casfile::Parser::new(&dico);
 
-    let config = if args.full_dump {
+    let parsing_result = if args.full_dump {
         parser.config_from_file(&args.config)
     } else {
         parser.parse_file(&args.config)
-    }?;
+    };
 
-    if args.dump || args.full_dump {
-        dump_config(&config, &dico, args)
-    } else {
-        Ok(())
+    match parsing_result {
+        Ok(config) => {
+            if args.dump || args.full_dump {
+                dump_config(&config, &dico, args)?
+            }
+            Ok(0)
+        }
+        Err(diag) => {
+            print_diagnostics(&diag);
+            Ok(diag.all().len())
+        }
+    }
+}
+
+fn print_diagnostics(diagnostics: &TextParserDiagnostics) {
+    for d in diagnostics.all() {
+        match d.severity {
+            Severity::Error => eprintln!("{}: error: {}", d.loc, d.message),
+            Severity::Warning => eprintln!("{}: warning: {}", d.loc, d.message),
+            Severity::Hint => eprintln!("{}: hint: {}", d.loc, d.message),
+        }
     }
 }
 
@@ -297,12 +322,16 @@ fn main() -> ExitCode {
     let args = Args::parse();
 
     match run(&args) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(error_cnt) => {
+            let clamped = std::cmp::min(error_cnt, 125);
+            ExitCode::from(clamped as u8)
+        }
         Err(errors) => {
             for e in errors {
                 eprintln!("Error: {e}");
             }
-            ExitCode::FAILURE
+
+            ExitCode::from(126)
         }
     }
 }
