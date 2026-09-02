@@ -81,6 +81,13 @@ impl Neighbors {
             neighbors_count[(*pt_idx) as usize] += 2;
         }
 
+        // As per above formula, a point is counted twice each time it is part of a cell
+        // thus to know in how many cell a point is, we have to divide neighbors_count[pt_idx] by two
+        //  Below, instead of dividing every value by two, we simply divide the result by 2
+
+        let max_cell_per_point: usize = neighbors_count.iter().fold(0, |max, nc| max.max(*nc)) / 2;
+        for pt_idx in geometry.ipob2(0).expect("No layer #0") {}
+
         // let mut start_idx_offset: Vec<usize> = Vec::with_capacity(points_count);
         // let mut sum = 0;
         // start_idx_offset.push(sum);
