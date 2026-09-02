@@ -24,6 +24,158 @@ pub struct TextLoc {
     column: usize,
 }
 
+/// An error at a specific location in a text file
+pub trait LocalizedError: std::error::Error {
+    /// Get the filename of the error
+    ///
+    /// If no error, return an empty string otherwise
+    fn filename(&self) -> &PathBuf;
+
+    /// Get the line number in the file, starting to 1
+    fn line(&self) -> usize;
+
+    /// Get the column number in the line, starting to 1. 0 if not set
+    fn column(&self) -> usize;
+}
+
+#[macro_export]
+macro_rules! impl_localized_error {
+    ($ty:ty { $($variant:ident),* }) => {
+        impl $crate::config::textloc::LocalizedError for $ty {
+            fn filename(&self) -> &std::path::PathBuf {
+                match self {
+                    $(Self::$variant {pos, ..} => pos.filename()),*
+                }
+            }
+            fn line(&self) -> usize {
+                match self {
+                    $(Self::$variant {pos, ..} => pos.line()),*
+                }
+
+            }
+            fn column(&self) -> usize {
+                match self {
+                    $(Self::$variant {pos, ..} => pos.column()),*
+                }
+            }
+        }
+    };
+}
+
+// use proc_macro::TokenStream;
+// use quote::quote;
+// use syn::{parse_macro_input, Data, DeriveInput, Fields};
+
+// #[proc_macro_derive(LocalizedErrorStuff)]
+// pub fn derive_parse_error_info(input: TokenStream) -> TokenStream {
+//     let input = parse_macro_input!(input as DeriveInput);
+//     let name = input.ident;
+
+//     let Data::Enum(data_enum) = input.data else {
+//         return syn::Error::new_spanned(name, "LocalizedError can only be derived for enums")
+//             .to_compile_error()
+//             .into();
+//     };
+
+//     let mut filename_arms = Vec::new();
+//     let mut line_arms = Vec::new();
+//     let mut column_arms = Vec::new();
+
+//     for variant in data_enum.variants {
+//         let variant_name = variant.ident;
+
+//         match variant.fields {
+//             Fields::Named(fields) => {
+//                 let mut filename = None;
+//                 let mut line = None;
+//                 let mut column = None;
+
+//                 for f in fields.named {
+//                     let ident = f.ident.unwrap();
+//                     if ident == "filename" {
+//                         filename = Some(quote! { filename });
+//                     } else if ident == "line" {
+//                         line = Some(quote! { line });
+//                     } else if ident == "column" {
+//                         column = Some(quote! { column });
+//                     } else if ident == "pos" {
+//                         filename = Some(quote! { pos.filename() });
+//                         line = Some(quote! { pos.line() });
+//                         column = Some(quote! { pos.column() });
+//                     }
+//                 }
+
+//                 let Some(filename_pat) = filename else {
+//                     return syn::Error::new_spanned(
+//                         variant_name,
+//                         "missing field `filename`",
+//                     )
+//                     .to_compile_error()
+//                     .into();
+//                 };
+//                 let Some(line_pat) = line else {
+//                     return syn::Error::new_spanned(
+//                         variant_name,
+//                         "missing field `line`",
+//                     )
+//                     .to_compile_error()
+//                     .into();
+//                 };
+//                 let Some(column_pat) = column else {
+//                     return syn::Error::new_spanned(
+//                         variant_name,
+//                         "missing field `column`",
+//                     )
+//                     .to_compile_error()
+//                     .into();
+//                 };
+
+//                 filename_arms.push(quote! {
+//                     Self::#variant_name { filename: #filename_pat, .. } => filename,
+//                 });
+//                 line_arms.push(quote! {
+//                     Self::#variant_name { line: #line_pat, .. } => line,
+//                 });
+//                 column_arms.push(quote! {
+//                     Self::#variant_name { column: #column_pat, .. } => column,
+//                 });
+//             }
+//             _ => {
+//                 return syn::Error::new_spanned(
+//                     variant_name,
+//                     "ParseErrorInfo only supports enums with named fields",
+//                 )
+//                 .to_compile_error()
+//                 .into();
+//             }
+//         }
+//     }
+
+//     let expanded = quote! {
+//         impl LocalizedError for #name {
+//             fn filename(&self) -> &str {
+//                 match self {
+//                     #(#filename_arms)*
+//                 }
+//             }
+
+//             fn line(&self) -> usize {
+//                 match self {
+//                     #(#line_arms)*
+//                 }
+//             }
+
+//             fn column(&self) -> &std::ops::Range<usize> {
+//                 match self {
+//                     #(#column_arms)*
+//                 }
+//             }
+//         }
+//     };
+
+//     expanded.into()
+// }
+
 // Impl From with filename
 //------------------------
 
