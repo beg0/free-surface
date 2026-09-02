@@ -3,6 +3,18 @@ use crate::mesh::neighbors::Neighbors;
 use crate::mesh::percellcoords::PerCellCoords;
 use crate::storage::selafin::geometry::SlfGeometry;
 
+/// Errors encountered on DTM computation
+#[derive(Debug, thiserror::Error)]
+pub enum DtmError {
+    #[error("Negative or null determinant for cell #{cell_idx}: {coords:?}")]
+    NegativeDeterminant {
+        cell_idx: usize,
+        coords: Vec<Point3f>,
+    },
+    #[error("Unsupported number of point per cell: {0}")]
+    UnsupportedPointPerCellCnt(usize),
+}
+
 /// Digital Terrain Model
 ///
 /// Gather all simulation data
@@ -57,7 +69,7 @@ fn triangle_surface(coords: &[Point3f]) -> f64 {
     0.5 * (x2 * y3 - x3 * y2)
 }
 
-fn det_inverse_triangle(coords: &[Point3f]) -> Result<f64, String> {
+fn det_inverse_triangle((cell_idx, coords): (usize, &[Point3f])) -> anyhow::Result<f64> {
     let t12 = -coords[0].x + coords[1].x;
     let t13 = -coords[0].x + coords[2].x;
     let t22 = -coords[0].y + coords[1].y;
@@ -66,31 +78,41 @@ fn det_inverse_triangle(coords: &[Point3f]) -> Result<f64, String> {
     let det = t12 * t23 - t22 * t13;
 
     if det < 1e-20 {
-        Err(String::from("Negative or null determinant"))
+        Err((DtmError::NegativeDeterminant {
+            cell_idx,
+            coords: coords.to_vec(),
+        })
+        .into())
     } else {
         Ok(1.0 / det)
     }
 }
 
-fn compute_surface(coords_per_cell: &PerCellCoords) -> Vec<f64> {
-    // TODO: check coords_per_cell.point_per_cell
-    // the formula in triangle_surface looks to be ok for triangle (e.g. coords_per_cell.point_per_cell==3)
-    // but also for prisms (coords_per_cell.point_per_cell==6)
-    coords_per_cell.iter().map(triangle_surface).collect()
+fn compute_surface(coords_per_cell: &PerCellCoords) -> anyhow::Result<Vec<f64>> {
+    // TODO: check that formula in triangle_surface() is actually ok for prisms (e.g coords_per_cell.point_per_cell==6)
+    if coords_per_cell.point_per_cell == 3 || coords_per_cell.point_per_cell == 6 {
+        Ok(coords_per_cell.iter().map(triangle_surface).collect())
+    } else {
+        Err(DtmError::UnsupportedPointPerCellCnt(coords_per_cell.point_per_cell).into())
+    }
 }
 
-fn compute_det_inverse(coords_per_cell: &PerCellCoords) -> Result<Vec<f64>, String> {
+fn compute_det_inverse(coords_per_cell: &PerCellCoords) -> anyhow::Result<Vec<f64>> {
     if coords_per_cell.point_per_cell == 3 {
-        coords_per_cell.iter().map(det_inverse_triangle).collect()
+        coords_per_cell
+            .iter()
+            .enumerate()
+            .map(det_inverse_triangle)
+            .collect()
     } else {
-        Ok(Vec::new())
+        Err(DtmError::UnsupportedPointPerCellCnt(coords_per_cell.point_per_cell).into())
     }
 }
 
 /// Create a DTM from a Selafin Geometry
-pub fn init_dtm(geometry: SlfGeometry) -> Result<DTM, String> {
+pub fn init_dtm(geometry: SlfGeometry) -> anyhow::Result<DTM> {
     let coords_per_cell = PerCellCoords::from_selafin(&geometry);
-    let surface = compute_surface(&coords_per_cell);
+    let surface = compute_surface(&coords_per_cell)?;
     let det_inverse = compute_det_inverse(&coords_per_cell)?;
     let neighbors = Neighbors::from_selafin(&geometry);
 
