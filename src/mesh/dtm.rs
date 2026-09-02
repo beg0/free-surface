@@ -4,6 +4,8 @@ use crate::mesh::neighbors::Neighbors;
 use crate::mesh::percellcoords::PerCellCoords;
 use crate::storage::selafin::geometry::SlfGeometry;
 
+use super::sanity::initial_sanity_checks;
+
 /// Errors encountered on DTM computation
 #[derive(Debug, fluent_message::FluentMessage)]
 pub enum DtmDiag {
@@ -116,6 +118,9 @@ fn compute_det_inverse(coords_per_cell: &PerCellCoords) -> Result<Vec<f64>, DtmD
 
 /// Create a DTM from a Selafin Geometry
 pub fn init_dtm(geometry: SlfGeometry) -> Result<DTM, Diagnostics> {
+    // Ensure we have a descent mesh
+    initial_sanity_checks(&geometry)?;
+
     let mut diag = Diagnostics::default();
 
     let coords_per_cell = PerCellCoords::from_selafin(&geometry);
