@@ -7,6 +7,7 @@ pub mod configviewer;
 pub mod diagnostic;
 mod helpers;
 
+pub mod reporter;
 /// How to render output values
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
 pub enum Format {
