@@ -72,6 +72,21 @@ pub enum DicoParseError {
     InconsistentChoiceOption { cnt1: usize, cnt2: usize },
 }
 
+// impl_localized_error!(DicoParseError {
+//     MissingField,
+//      UnknownField, InvalidValue, TooMuchValues, NotEnoughValues, InvalidDefaultValue,
+//     //DuplicatedKey,
+//     // InconsistentDefaultValues,
+//     InvalidChoice,
+//     // InconsistentChoiceOption,
+//     InconsistentChoiceOption
+// }
+// );
+
+// fn one_err(e: impl std::error::Error + 'static) -> VecErrorPtr {
+//     vec![Box::new(e)]
+// }
+
 /// Parse a Telemac dico file
 pub fn parse_file<P: AsRef<Path>>(filename: P) -> Result<Dico, TextParserDiagnostics> {
     let file_pos = TextLoc::from((&filename, 0));

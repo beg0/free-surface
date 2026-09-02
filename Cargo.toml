@@ -16,6 +16,7 @@ clap = { version = "4.6.1", features = ["derive"] }
 thiserror = "2.0.18"
 binrw     = "0.15"
 chrono = "0.4"
+#quote = "1"
 regex = "1.12.3"
 num-traits = "0.2.19"
 anstream = "1.0.0"
@@ -23,7 +24,9 @@ anstyle = "1.0.0"
 serde_json = "1.0"
 serde = "1.0.228"
 #strum = { version="0.28", features = ["derive"] }
+#syn = "2"
 nalgebra = { version="0.35.0", features = ["bytemuck"]}
+#proc-macro2 = "1"
 
 [dev-dependencies]
 assert_cmd = "2"
