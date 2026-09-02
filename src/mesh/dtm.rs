@@ -62,6 +62,13 @@ pub struct DTM {
 
 // }
 
+fn max_neighbors(ikle: &[usize], ipobo: &[usize]) -> (usize, usize) {
+    let MXPTVS: usize = 0;
+    let MXELVS: usize = 0;
+
+    (MXPTVS, MXELVS)
+}
+
 fn triangle_surface(coords: &[Point3f]) -> f64 {
     let x2 = coords[1].x;
     let x3 = coords[2].x;
