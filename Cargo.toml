@@ -34,6 +34,7 @@ fluent-message = {
     rev = "a45621208c28e308980de7bce99a0bdfc3cc4886",
     features=["i18n"]
 }
+#strum = { version="0.28", features = ["derive"] }
 nalgebra = { version="0.35.0", features = ["bytemuck"]}
 
 [dev-dependencies]
