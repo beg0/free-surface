@@ -19,3 +19,12 @@ pub enum Format {
     #[value(alias("porcelain"), hide = false)]
     Machine,
 }
+
+/// Format for outputing diagnostics
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum DiagFormat {
+    /// Console output format
+    Terminal,
+    /// JSON (one object per file)
+    Json,
+}
