@@ -9,8 +9,12 @@ use std::str::FromStr;
 use clap::Parser;
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
-use free_surface::aui::diagnostic::collector::{Severity, TextParserDiagnostics};
+use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
+use free_surface::aui::diagnostic::reporter::{
+    create_text_diagnostic_renderer, TextDiagnosticsRendererOptions,
+};
 use free_surface::aui::Format;
+
 use free_surface::config::configvalue::ConfigValue;
 use free_surface::config::dicofile::DicoKeyword;
 use free_surface::config::{self, dicofile::Dico};
@@ -277,7 +281,7 @@ fn run(args: &Args) -> Result<usize, Errors> {
     let dico = match config::dicofile::parse_file(&args.dico) {
         Ok(dico) => dico,
         Err(diag) => {
-            print_diagnostics(&diag);
+            print_diagnostics(&diag)?;
             return Ok(diag.all().len());
         }
     };
@@ -298,20 +302,20 @@ fn run(args: &Args) -> Result<usize, Errors> {
             Ok(0)
         }
         Err(diag) => {
-            print_diagnostics(&diag);
+            print_diagnostics(&diag)?;
             Ok(diag.all().len())
         }
     }
 }
 
-fn print_diagnostics(diagnostics: &TextParserDiagnostics) {
-    for d in diagnostics.all() {
-        match d.severity {
-            Severity::Error => eprintln!("{}: error: {}", d.loc, d.message),
-            Severity::Warning => eprintln!("{}: warning: {}", d.loc, d.message),
-            Severity::Hint => eprintln!("{}: hint: {}", d.loc, d.message),
-        }
-    }
+fn print_diagnostics(diagnostics: &TextParserDiagnostics) -> Result<(), Errors> {
+    let stderr = io::stderr();
+    let options = TextDiagnosticsRendererOptions::Terminal {
+        color: clap::ColorChoice::Auto,
+    };
+    let mut renderer = create_text_diagnostic_renderer(stderr.lock(), options);
+
+    renderer.as_mut().render(diagnostics).map_err(one_err)
 }
 
 // ---------------------------------------------------------------------------
