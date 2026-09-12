@@ -13,7 +13,7 @@ use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
 use free_surface::aui::diagnostic::reporter::{
     create_text_diagnostic_renderer, TextDiagnosticsRendererOptions,
 };
-use free_surface::aui::Format;
+use free_surface::aui::{DiagFormat, Format};
 
 use free_surface::config::configvalue::ConfigValue;
 use free_surface::config::dicofile::DicoKeyword;
@@ -75,6 +75,14 @@ struct Args {
     /// Supported value: help, choice_option, default_value, type, nargs, boundaries
     #[arg(long, value_delimiter = ',')]
     extra_doc: Vec<DocInfo>,
+
+    /// How diagnostics are rendered
+    #[arg(long, value_enum, default_value_t=DiagFormat::Terminal)]
+    diagnostics_format: DiagFormat,
+
+    /// Use color in diagnostics
+    #[arg(long, default_value_t=clap::ColorChoice::Auto)]
+    diagnostics_color: clap::ColorChoice,
 }
 
 impl FromStr for DocInfo {
@@ -281,7 +289,7 @@ fn run(args: &Args) -> Result<usize, Errors> {
     let dico = match config::dicofile::parse_file(&args.dico) {
         Ok(dico) => dico,
         Err(diag) => {
-            print_diagnostics(&diag)?;
+            print_diagnostics(&diag, args)?;
             return Ok(diag.all().len());
         }
     };
@@ -302,16 +310,20 @@ fn run(args: &Args) -> Result<usize, Errors> {
             Ok(0)
         }
         Err(diag) => {
-            print_diagnostics(&diag)?;
+            print_diagnostics(&diag, args)?;
             Ok(diag.all().len())
         }
     }
 }
 
-fn print_diagnostics(diagnostics: &TextParserDiagnostics) -> Result<(), Errors> {
+fn print_diagnostics(diagnostics: &TextParserDiagnostics, args: &Args) -> Result<(), Errors> {
     let stderr = io::stderr();
-    let options = TextDiagnosticsRendererOptions::Terminal {
-        color: clap::ColorChoice::Auto,
+
+    let options = match args.diagnostics_format {
+        DiagFormat::Terminal => TextDiagnosticsRendererOptions::Terminal {
+            color: args.diagnostics_color,
+        },
+        DiagFormat::Json => TextDiagnosticsRendererOptions::Json { pretty: false },
     };
     let mut renderer = create_text_diagnostic_renderer(stderr.lock(), options);
 
