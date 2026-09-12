@@ -3,10 +3,11 @@
 /// This module offers a way to create a reporting function for [TextParserDiagnostics]
 ///
 use anstream::stream::{AsLockedWrite, RawStream};
-use anstream::AutoStream;
 use clap::ColorChoice;
 
 use super::super::collector::TextParserDiagnostics;
+
+use crate::aui::helpers::color_choice_to_stream;
 
 mod json;
 mod terminal;
@@ -46,13 +47,7 @@ where
 {
     match options {
         TextDiagnosticsRendererOptions::Terminal { color } => {
-            // AutoStream strips ANSI codes automatically when the output is
-            // not a TTY or when NO_COLOR / --no-color is set.
-            let stream = match color {
-                ColorChoice::Always => AutoStream::always(out),
-                ColorChoice::Never => AutoStream::never(out),
-                ColorChoice::Auto => AutoStream::auto(out),
-            };
+            let stream = color_choice_to_stream(out, color);
             Box::new(terminal::TerminalTextDiagnosticsRenderer::new(stream))
         }
         TextDiagnosticsRendererOptions::Json { pretty } => {

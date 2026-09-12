@@ -5,6 +5,7 @@ use clap::ValueEnum;
 
 pub mod configviewer;
 pub mod diagnostic;
+mod helpers;
 
 /// How to render output values
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
