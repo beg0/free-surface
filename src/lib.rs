@@ -10,5 +10,8 @@
 
 pub mod aui;
 pub mod config;
+pub mod i18n;
 pub mod storage;
 pub mod utils;
+
+pub use i18n::set_locale;

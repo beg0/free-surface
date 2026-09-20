@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use std::str::FromStr;
 
 use clap::Parser;
+use free_surface::set_locale;
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
 use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
@@ -342,6 +343,12 @@ fn print_diagnostics(diagnostics: &TextParserDiagnostics, args: &Args) -> Result
 // ---------------------------------------------------------------------------
 
 fn main() -> ExitCode {
+    // Use system locale
+    if let Err(error) = set_locale(None) {
+        eprintln!("Can't set locale: {error}");
+        return ExitCode::FAILURE;
+    }
+
     let args = Args::parse();
 
     match run(&args) {

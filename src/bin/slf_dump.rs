@@ -12,6 +12,7 @@ use serde_json::json;
 use serde_json::value::Value as JsonValue;
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
+use free_surface::set_locale;
 
 use free_surface::aui::Format;
 use free_surface::storage::selafin::{parse_file, Selafin};
@@ -355,6 +356,12 @@ fn render_history(e: &mut dyn ConfigViewer, slf: &Selafin, query: &HistoryQuery)
 // ---------------------------------------------------------------------------
 
 fn main() -> ExitCode {
+    // Use system locale
+    if let Err(error) = set_locale(None) {
+        eprintln!("Can't set locale: {error}");
+        return ExitCode::FAILURE;
+    }
+
     let args = Args::parse();
 
     let tokens: &Vec<ShowToken> = &args.show;
