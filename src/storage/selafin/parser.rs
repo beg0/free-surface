@@ -83,7 +83,9 @@ fn detect_endianness<R: Read + Seek>(reader: &mut R) -> binrw::BinResult<Endian>
 // ---------------------------------------------------------------------------
 
 fn read_u32s(data: &[u8], endian: Endian) -> Vec<u32> {
-    data.chunks_exact(4)
+    data.as_chunks::<4>()
+        .0
+        .iter()
         .map(|b| {
             let arr = [b[0], b[1], b[2], b[3]];
             match endian {
@@ -96,7 +98,9 @@ fn read_u32s(data: &[u8], endian: Endian) -> Vec<u32> {
 
 #[allow(dead_code)]
 fn read_i32s(data: &[u8], endian: Endian) -> Vec<i32> {
-    data.chunks_exact(4)
+    data.as_chunks::<4>()
+        .0
+        .iter()
         .map(|b| {
             let arr = [b[0], b[1], b[2], b[3]];
             match endian {
@@ -108,7 +112,9 @@ fn read_i32s(data: &[u8], endian: Endian) -> Vec<i32> {
 }
 
 fn read_f32s(data: &[u8], endian: Endian) -> Vec<f32> {
-    data.chunks_exact(4)
+    data.as_chunks::<4>()
+        .0
+        .iter()
         .map(|b| {
             let arr = [b[0], b[1], b[2], b[3]];
             match endian {
@@ -120,7 +126,9 @@ fn read_f32s(data: &[u8], endian: Endian) -> Vec<f32> {
 }
 
 fn read_f64s(data: &[u8], endian: Endian) -> Vec<f64> {
-    data.chunks_exact(8)
+    data.as_chunks::<8>()
+        .0
+        .iter()
         .map(|b| {
             let arr = [b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
             match endian {
