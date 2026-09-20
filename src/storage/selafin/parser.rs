@@ -7,7 +7,7 @@ use super::container::{FloatSize, SlfArray1D, SlfArray2D};
 use super::geometry::SlfGeometry;
 use super::variable::{SlfVariable, TimeSerie, VariableEvolution};
 use super::Selafin;
-use binrw::{BinReaderExt, Endian};
+use binrw::Endian;
 use chrono::NaiveDateTime;
 use regex::RegexBuilder;
 use std::cmp::max;
@@ -33,8 +33,8 @@ enum IParams {
 fn read_record<R: Read + Seek>(reader: &mut R, endian: Endian) -> binrw::BinResult<Vec<u8>> {
     let read_u32 = |r: &mut R| -> binrw::BinResult<u32> {
         match endian {
-            Endian::Big => r.read_be::<u32>(),
-            Endian::Little => r.read_le::<u32>(),
+            Endian::Big => binrw::BinReaderExt::read_be::<u32>(r),
+            Endian::Little => binrw::BinReaderExt::read_le::<u32>(r),
         }
     };
 
