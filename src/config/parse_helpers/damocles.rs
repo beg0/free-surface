@@ -31,6 +31,8 @@
 
 use std::iter::Iterator;
 
+use crate::aui::diagnostic::collector::TextParserDiagnostics;
+
 use super::super::textloc::TextLoc;
 use super::locatedchars;
 use super::unquote_single;
@@ -43,36 +45,32 @@ mod tests;
 /// Errors that can occur while parsing Telemac config files
 #[derive(Debug, thiserror::Error)]
 pub enum DamoclesError {
-    #[error("{pos}: Unexpected assignment '{assignment}'.")]
-    UnexpectedAssignment { assignment: char, pos: TextLoc },
+    #[error("Unexpected assignment '{assignment}'.")]
+    UnexpectedAssignment { assignment: char },
 
-    #[error("{pos}: Unexpected list separator '{sep}'.")]
-    UnexpectedListSeparator { sep: char, pos: TextLoc },
+    #[error("Unexpected list separator '{sep}'.")]
+    UnexpectedListSeparator { sep: char },
 
-    #[error("{pos}: Unexpected list separator '{sep}' after key '{key}'.")]
-    UnexpectedListSeparatorAfterKey {
-        sep: char,
-        key: String,
-        pos: TextLoc,
-    },
+    #[error("Unexpected list separator '{sep}' after key '{key}'.")]
+    UnexpectedListSeparatorAfterKey { sep: char, key: String },
 
-    #[error("{pos}: Missing terminal quote '{quote}'.")]
-    MissingEndQuote { quote: char, pos: TextLoc },
+    #[error("Missing terminal quote '{quote}'.")]
+    MissingEndQuote { quote: char },
 
-    #[error("{pos}: Unexpected token, expected assignment ':' or '='.")]
-    MissingAssignment { pos: TextLoc },
+    #[error("Unexpected token, expected assignment ':' or '='.")]
+    MissingAssignment {},
 
-    #[error("{pos}: Missing value for key {key}.")]
-    MissingEndValue { key: String, pos: TextLoc },
+    #[error("Missing value for key {key}.")]
+    MissingEndValue { key: String },
 
-    #[error("{pos}: Invalid character {char}.")]
-    NonPrintableCharacter { char: char, pos: TextLoc },
+    #[error("Invalid character {char}.")]
+    NonPrintableCharacter { char: char },
 
-    #[error("{pos}: Unknown special command '{cmd}'.")]
-    UnknownCommand { cmd: String, pos: TextLoc },
+    #[error("Unknown special command '{cmd}'.")]
+    UnknownCommand { cmd: String },
 
-    #[error("{pos}: Stop command encountered '{cmd}'.")]
-    StopCommand { cmd: String, pos: TextLoc },
+    #[error("Stop command encountered '{cmd}'.")]
+    StopCommand { cmd: String },
 }
 
 /// Return codes for handler of special command (e.g. keyword starting with '&')
@@ -130,15 +128,12 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
     }
 
     fn process_cmd(&mut self, token: TokenInfo) {
-        match self.field_parser.cmd(token) {
-            Ok(exit_status) => match exit_status {
+        if let Some(exit_status) = self.field_parser.cmd(token) {
+            match exit_status {
                 DamoclesCommandStatus::Success => {}
                 DamoclesCommandStatus::Exit => {
                     self.quit = true;
                 }
-            },
-            Err(err) => {
-                self.field_parser.error(err);
             }
         }
     }
@@ -233,11 +228,9 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                     TokenizerState::PlainToken => {
                         token = self.create_token(input);
                         if find_assignment {
-                            let e = Box::new(DamoclesError::UnexpectedAssignment {
-                                assignment: c,
-                                pos: self.field_parser.loc(chars.pos()),
-                            });
-                            self.field_parser.error(e);
+                            let e = DamoclesError::UnexpectedAssignment { assignment: c };
+                            let pos = self.field_parser.loc(chars.pos());
+                            self.field_parser.diag().error(e.to_string(), pos);
                         }
                         tokenizer_state = TokenizerState::Outside;
                         find_assignment = true;
@@ -247,11 +240,9 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                     | TokenizerState::Comment => {}
                     TokenizerState::Outside => {
                         if find_assignment || key.is_none() {
-                            let e = Box::new(DamoclesError::UnexpectedAssignment {
-                                assignment: c,
-                                pos: self.field_parser.loc(chars.pos()),
-                            });
-                            self.field_parser.error(e);
+                            let e = DamoclesError::UnexpectedAssignment { assignment: c };
+                            let pos = self.field_parser.loc(chars.pos());
+                            self.field_parser.diag().error(e.to_string(), pos);
                         }
                         find_assignment = true;
                     }
@@ -265,12 +256,12 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                             // List separator before a key is set.
                             // This means a ';' instead of a ':' or '=' (or the key is missing)
                             if key.is_none() {
-                                let e = Box::new(DamoclesError::UnexpectedListSeparatorAfterKey {
+                                let e = DamoclesError::UnexpectedListSeparatorAfterKey {
                                     sep: c,
                                     key: token.clone().unwrap().token.clone(),
-                                    pos: self.field_parser.loc(chars.pos()),
-                                });
-                                self.field_parser.error(e);
+                                };
+                                let pos = self.field_parser.loc(chars.pos());
+                                self.field_parser.diag().error(e.to_string(), pos);
                             } else {
                                 expected_value_cnt += 1;
                             }
@@ -283,11 +274,9 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                             expected_value_cnt += 1;
 
                             if key.is_none() || values.is_empty() {
-                                let e = Box::new(DamoclesError::UnexpectedListSeparator {
-                                    sep: c,
-                                    pos: self.field_parser.loc(chars.pos()),
-                                });
-                                self.field_parser.error(e);
+                                let e = DamoclesError::UnexpectedListSeparator { sep: c };
+                                let pos = self.field_parser.loc(chars.pos());
+                                self.field_parser.diag().error(e.to_string(), pos);
                             }
                         }
                     }
@@ -296,11 +285,9 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                     // If we find a "control" character, we are most probably parsing a bin file, not a text file...
                     // Note however that tab ('\t') is considered a control character...
                     if c.is_control() && !c.is_whitespace() {
-                        let e = Box::new(DamoclesError::NonPrintableCharacter {
-                            char: c,
-                            pos: self.field_parser.loc(chars.pos()),
-                        });
-                        self.field_parser.error(e);
+                        let e = DamoclesError::NonPrintableCharacter { char: c };
+                        let pos = self.field_parser.loc(chars.pos());
+                        self.field_parser.diag().error(e.to_string(), pos);
                     }
 
                     match tokenizer_state {
@@ -348,10 +335,10 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                         let value = unwrapped_token;
                         values.push(value);
                     } else {
-                        let e = Box::new(DamoclesError::MissingAssignment {
-                            pos: unwrapped_token.start_pos.clone(),
-                        });
-                        self.field_parser.error(e);
+                        let e = DamoclesError::MissingAssignment {};
+                        self.field_parser
+                            .diag()
+                            .error(e.to_string(), unwrapped_token.start_pos.clone());
                     }
                 }
                 token = None;
@@ -396,11 +383,9 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                     '"'
                 };
 
-                let e = Box::new(DamoclesError::MissingEndQuote {
-                    quote,
-                    pos: self.field_parser.loc(chars.pos()),
-                });
-                self.field_parser.error(e);
+                let e = DamoclesError::MissingEndQuote { quote };
+                let pos = self.field_parser.loc(chars.pos());
+                self.field_parser.diag().error(e.to_string(), pos);
             }
         }
 
@@ -417,10 +402,10 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                     let value = unwrapped_token;
                     values.push(value);
                 } else {
-                    let e = Box::new(DamoclesError::MissingAssignment {
-                        pos: unwrapped_token.start_pos.clone(),
-                    });
-                    self.field_parser.error(e);
+                    let e = DamoclesError::MissingAssignment {};
+                    self.field_parser
+                        .diag()
+                        .error(e.to_string(), unwrapped_token.start_pos.clone());
                 }
             }
             //token = None;
@@ -434,11 +419,12 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                 };
                 self.field_parser.new_field(kpi);
             } else {
-                let e = Box::new(DamoclesError::MissingEndValue {
+                let e = DamoclesError::MissingEndValue {
                     key: unwrapped_key.token.to_owned(),
-                    pos: unwrapped_key.start_pos,
-                });
-                self.field_parser.error(e);
+                };
+                self.field_parser
+                    .diag()
+                    .error(e.to_string(), unwrapped_key.start_pos);
             }
         } else {
             // Nothing to proceed.
@@ -456,10 +442,10 @@ pub trait DamoclesParser {
     fn new_field(&mut self, kpi: KeywordParseInfo);
 
     /// Handle a command (e.g three characters starting with '&')
-    fn cmd(&mut self, cmd: TokenInfo) -> Result<DamoclesCommandStatus, Box<dyn std::error::Error>>;
+    fn cmd(&mut self, cmd: TokenInfo) -> Option<DamoclesCommandStatus>;
 
     /// Report a parsing error
-    fn error(&mut self, e: Box<dyn std::error::Error>);
+    fn diag(&mut self) -> &mut TextParserDiagnostics;
 
     /// Compute TextLoc from a {line, col} pair
     fn loc(&self, pos: (usize, usize)) -> TextLoc;

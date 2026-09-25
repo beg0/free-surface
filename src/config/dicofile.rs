@@ -17,9 +17,6 @@ pub use parser::{parse, parse_file};
 /// Possibles locales in a Dico file
 const LOCALES: [&str; 2] = ["en", "fr"];
 
-type ErrorPtr = Box<dyn std::error::Error>;
-type VecErrorPtr = Vec<ErrorPtr>;
-
 // All keywords for a given locale, indexed by their (normalized) name
 type DicoInner = HashMap<String, Rc<DicoKeyword>>;
 
