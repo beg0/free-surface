@@ -25,11 +25,13 @@ fn all_telemac_dic() {
         let full_path = telemac_file(relative_path).expect("Can't get telemac file");
         match parse_file(full_path) {
             Ok(_) => {}
-            Err(errs) => {
+            Err(diagnostics) => {
                 panic!(
                     "{}",
-                    errs.iter()
-                        .map(|e| format!("{}\n", e))
+                    diagnostics
+                        .all()
+                        .iter()
+                        .map(|e| format!("{}: {:?}: {}\n", e.loc, e.severity, e.message))
                         .collect::<Vec<String>>()
                         .concat()
                 );

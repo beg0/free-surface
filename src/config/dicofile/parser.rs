@@ -11,116 +11,99 @@ use super::super::parse_helpers::{
     DamoclesCommandStatus, DamoclesError, DamoclesParser, KeywordParseInfo, TokenInfo,
 };
 use super::super::textloc::TextLoc;
+use crate::aui::diagnostic::collector::TextParserDiagnostics;
 
 use super::dicokeyword::{ChoiceOptionHelp, DicoKeyword, GuiControl, KeywordTextDescription};
-use super::{normalize_keyword_name, Dico, DicoInner, ErrorPtr, VecErrorPtr, LOCALES};
+use super::{normalize_keyword_name, Dico, DicoInner, LOCALES};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DicoParseError {
-    #[error("{pos}: Missing required field '{field}' in keyword block")]
-    MissingField { field: &'static str, pos: TextLoc },
-    #[error("{pos}: Unknown field '{field}'")]
-    UnknownField { field: String, pos: TextLoc },
-    #[error("{pos}: Invalid value for field '{field}': {reason}")]
-    InvalidValue {
-        field: String,
-        reason: String,
-        pos: TextLoc,
-    },
-    #[error(
-        "{pos}: Too much values for field '{field}': got {got_count} but expected {expected_count}"
-    )]
+    #[error("Missing required field '{field}' in keyword block")]
+    MissingField { field: &'static str },
+    #[error("Unknown field '{field}'")]
+    UnknownField { field: String },
+    #[error("Invalid value for field '{field}': {reason}")]
+    InvalidValue { field: String, reason: String },
+    #[error("Too much values for field '{field}': got {got_count} but expected {expected_count}")]
     TooMuchValues {
-        pos: TextLoc,
         field: String,
         got_count: usize,
         expected_count: usize,
     },
     #[error(
-        "{pos}: Not enough values for field '{field}': got {got_count} but expected at least {expected_count}"
+        "Not enough values for field '{field}': got {got_count} but expected at least {expected_count}"
     )]
     NotEnoughValues {
-        pos: TextLoc,
         field: String,
         got_count: usize,
         expected_count: usize,
     },
-    #[error("{pos}: Invalid default value '{value}' in field {field}: {reason}")]
+    #[error("Invalid default value '{value}' in field {field}: {reason}")]
     InvalidDefaultValue {
         field: String,
         value: String,
         reason: String,
-        pos: TextLoc,
     },
-    // #[error("{pos}: Duplicated field {field} in block starting at {block_pos}")]
+    // #[error("Duplicated field {field} in block starting at {block_pos}")]
     // DuplicatedKey {
     //     field: String,
-    //     pos: TextLoc,
     //     block_pos: TextLoc,
     // },
 
-    // #[error("{pos}: Inconsistent default values")]
+    // #[error("Inconsistent default values")]
     // InconsistentDefaultValues {
     //     field: String,
     //     reason: String,
-    //     pos: TextLoc,
     // },
-    #[error("{pos}: Invalid value for choice '{option}' in field {field}: {reason}")]
+    #[error("Invalid value for choice '{option}' in field {field}: {reason}")]
     InvalidChoice {
         field: String,
         option: String,
         reason: String,
-        pos: TextLoc,
     },
-    // #[error("{pos}: Inconsistent options between choices for {lang1} and {lang2}. Got {choices1} and {choices2}")]
+    // #[error("Inconsistent options between choices for {lang1} and {lang2}. Got {choices1} and {choices2}")]
     // InconsistentChoiceOption {
     //     lang1: String,
     //     lang2: String,
     //     choices1: Vec<ConfigValue>,
     //     choices2: Vec<ConfigValue>,
-    //     pos: TextLoc,
     // },
-    #[error("{pos}: Inconsistent options between choices for different languages. Got {cnt1} and {cnt2} options.")]
-    InconsistentChoiceOption {
-        pos: TextLoc,
-        cnt1: usize,
-        cnt2: usize,
-    },
-}
-
-fn one_err(e: impl std::error::Error + 'static) -> VecErrorPtr {
-    vec![Box::new(e)]
+    #[error("Inconsistent options between choices for different languages. Got {cnt1} and {cnt2} options.")]
+    InconsistentChoiceOption { cnt1: usize, cnt2: usize },
 }
 
 /// Parse a Telemac dico file
-pub fn parse_file<P: AsRef<Path>>(filename: P) -> Result<Dico, VecErrorPtr> {
-    let content = std::fs::read_to_string(&filename).map_err(one_err)?;
-    let file_pos = TextLoc::from((filename, 0));
+pub fn parse_file<P: AsRef<Path>>(filename: P) -> Result<Dico, TextParserDiagnostics> {
+    let file_pos = TextLoc::from((&filename, 0));
+
+    let content = std::fs::read_to_string(&filename).map_err(|err| {
+        TextParserDiagnostics::from_single_error(err.to_string(), file_pos.clone())
+    })?;
 
     parse_dico_with_textloc(&content, file_pos)
 }
 
 /// Parse a Telemac dico from a buffer
-pub fn parse(input: &str) -> Result<Dico, VecErrorPtr> {
+pub fn parse(input: &str) -> Result<Dico, TextParserDiagnostics> {
     parse_dico_with_textloc(input, TextLoc::default())
 }
 
-fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, VecErrorPtr> {
+fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, TextParserDiagnostics> {
     let mut parser = DicoFieldParser {
         fields: HashMap::new(),
         block_pos: file_pos.clone(),
         file_pos,
-        errors: Vec::new(),
+        diag: TextParserDiagnostics::default(),
         keywords: Vec::new(),
     };
 
     parser.parse_fields(input);
     parser.finalize_parsing();
 
-    if parser.errors.is_empty() {
-        Ok(parser.to_dico())
+    if parser.diag.has_errors(false) {
+        Err(parser.diag)
     } else {
-        Err(parser.errors)
+        Ok(parser.to_dico())
     }
 }
 
@@ -128,9 +111,8 @@ fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, VecEr
 fn parse_block(
     fields: &HashMap<String, KeywordParseInfo>,
     block_pos: &TextLoc,
-) -> Result<DicoKeyword, VecErrorPtr> {
-    let mut errors = Vec::new();
-
+    diag: &mut TextParserDiagnostics,
+) -> Option<DicoKeyword> {
     let mut text_desc: HashMap<String, KeywordTextDescription> = HashMap::new();
     let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
 
@@ -139,21 +121,25 @@ fn parse_block(
     // Get a vector of TokenInfo of exactly `expected_count`
     let get_n = |key: &'static str,
                  expected_count: usize,
-                 errors: &mut VecErrorPtr|
+                 diag: &mut TextParserDiagnostics|
      -> Option<&Vec<TokenInfo>> {
         let kpi = fields.get(key)?;
         let parse_infos = &kpi.values;
         if parse_infos.len() != expected_count {
-            errors.push(Box::new(DicoParseError::TooMuchValues {
-                field: key.to_string(),
-                pos: if parse_infos.len() >= 2 {
-                    parse_infos[1].start_pos.clone()
-                } else {
-                    block_pos.clone()
-                },
-                expected_count,
-                got_count: parse_infos.len(),
-            }));
+            let pos = if parse_infos.len() >= 2 {
+                parse_infos[1].start_pos.clone()
+            } else {
+                block_pos.clone()
+            };
+            diag.error(
+                DicoParseError::TooMuchValues {
+                    field: key.to_string(),
+                    expected_count,
+                    got_count: parse_infos.len(),
+                }
+                .to_string(),
+                pos,
+            );
 
             None
         } else {
@@ -161,20 +147,25 @@ fn parse_block(
         }
     };
 
-    let get_last = |key: &'static str, errors: &mut VecErrorPtr| -> Option<&TokenInfo> {
+    let get_last = |key: &'static str, diag: &mut TextParserDiagnostics| -> Option<&TokenInfo> {
         let kpi = fields.get(key)?;
         let parse_infos = &kpi.values;
         if parse_infos.is_empty() {
-            errors.push(Box::new(DicoParseError::NotEnoughValues {
-                field: key.to_string(),
-                pos: if parse_infos.len() >= 2 {
-                    parse_infos[1].start_pos.clone()
-                } else {
-                    block_pos.clone()
-                },
-                expected_count: 1,
-                got_count: parse_infos.len(),
-            }));
+            let pos = if parse_infos.len() >= 2 {
+                parse_infos[1].start_pos.clone()
+            } else {
+                block_pos.clone()
+            };
+
+            diag.error(
+                DicoParseError::NotEnoughValues {
+                    field: key.to_string(),
+                    expected_count: 1,
+                    got_count: parse_infos.len(),
+                }
+                .to_string(),
+                pos,
+            );
 
             None
         } else {
@@ -182,39 +173,42 @@ fn parse_block(
         }
     };
 
-    let get_one = |key: &'static str, errors: &mut VecErrorPtr| -> Option<&TokenInfo> {
-        get_n(key, 1, errors).map(|v| &v[0])
+    let get_one = |key: &'static str, diag: &mut TextParserDiagnostics| -> Option<&TokenInfo> {
+        get_n(key, 1, diag).map(|v| &v[0])
     };
 
-    let get_val_one = |key: &'static str, errors: &mut VecErrorPtr| -> Option<String> {
-        get_one(key, errors).map(|token_info| token_info.token.clone())
+    let get_val_one = |key: &'static str, diag: &mut TextParserDiagnostics| -> Option<String> {
+        get_one(key, diag).map(|token_info| token_info.token.clone())
     };
 
-    let require_one = |key: &'static str, errors: &mut VecErrorPtr| -> String {
-        match get_one(key, errors) {
+    let require_one = |key: &'static str, diag: &mut TextParserDiagnostics| -> String {
+        match get_one(key, diag) {
             Some(token_info) => token_info.token.clone(),
             None => {
-                errors.push(Box::new(DicoParseError::MissingField {
-                    field: key,
-                    pos: block_pos.clone(),
-                }));
+                diag.error(
+                    DicoParseError::MissingField { field: key }.to_string(),
+                    block_pos.clone(),
+                );
                 String::new()
             }
         }
     };
 
-    let type_ = get_one("TYPE", &mut errors)
+    let type_ = get_one("TYPE", diag)
         .and_then(|desc| match unquote_single(desc.token.as_str()).as_str() {
             "STRING" | "CARACTERE" => Some(DicoType::String),
             "INTEGER" | "ENTIER" => Some(DicoType::Integer),
             "REAL" | "REEL" => Some(DicoType::Real),
             "LOGICAL" | "LOGIQUE" => Some(DicoType::Logical),
             other => {
-                errors.push(Box::new(DicoParseError::InvalidValue {
-                    field: "TYPE".into(),
-                    reason: format!("unknown type '{}'", other),
-                    pos: desc.start_pos.clone(),
-                }));
+                diag.error(
+                    DicoParseError::InvalidValue {
+                        field: "TYPE".into(),
+                        reason: format!("unknown type '{}'", other),
+                    }
+                    .to_string(),
+                    desc.start_pos.clone(),
+                );
                 None
             }
         })
@@ -228,8 +222,8 @@ fn parse_block(
 
     let taille: u32 = parse_integer_field(
         "TAILLE",
-        get_one("TAILLE", &mut errors).or(Some(&default_taille)),
-        &mut errors,
+        get_one("TAILLE", diag).or(Some(&default_taille)),
+        diag,
         block_pos,
     );
 
@@ -237,24 +231,27 @@ fn parse_block(
     let english_names = ("NOM1", "AIDE1", "DEFAUT1", "CHOIX1", "RUBRIQUE1");
 
     for (locale, names) in [(LOCALES[1], french_names), (LOCALES[0], english_names)] {
-        let name = require_one(names.0, &mut errors);
-        let help = get_val_one(names.1, &mut errors).unwrap_or_default();
+        let name = require_one(names.0, diag);
+        let help = get_val_one(names.1, diag).unwrap_or_default();
         let kpi_defaults = fields.get(names.2);
         let nargs = taille.try_into().unwrap();
 
         let default_val: Option<ConfigValue> = kpi_defaults.and_then(|kpi| {
             let values = kpi.fixed_list_values(&type_, nargs);
-            match parse_value_2::<ErrorPtr, _>(&values, &type_, nargs, |entry, reason| {
-                Box::new(DicoParseError::InvalidDefaultValue {
-                    field: String::from(names.2),
-                    value: entry.token.clone(),
-                    reason,
-                    pos: entry.start_pos.clone(),
-                })
-            }) {
+            match parse_value_2(&values, &type_, nargs) {
                 Ok(res) => Some(res),
-                Err(errs) => {
-                    errors.extend(errs);
+                Err(errors) => {
+                    for (entry, reason) in errors {
+                        diag.error(
+                            DicoParseError::InvalidDefaultValue {
+                                field: String::from(names.2),
+                                value: entry.token.clone(),
+                                reason,
+                            }
+                            .to_string(),
+                            entry.start_pos.clone(),
+                        );
+                    }
                     None
                 }
             }
@@ -277,14 +274,7 @@ fn parse_block(
         for entry in choices_text_with_loc {
             let (option_token, help_text) = parse_choice_help(entry);
 
-            match parse_single_value_2::<ErrorPtr, _>(&option_token, &type_, |entry, reason| {
-                Box::new(DicoParseError::InvalidChoice {
-                    field: String::from(names.3),
-                    option: entry.token.clone(),
-                    reason,
-                    pos: entry.start_pos.clone(),
-                })
-            }) {
+            match parse_single_value_2(&option_token, &type_) {
                 Ok(option) => {
                     choices_values.push(option.clone());
                     choices_help.push(ChoiceOptionHelp {
@@ -292,8 +282,16 @@ fn parse_block(
                         help: help_text,
                     });
                 }
-                Err(errs) => {
-                    errors.extend(errs);
+                Err((entry, reason)) => {
+                    diag.error(
+                        DicoParseError::InvalidChoice {
+                            field: String::from(names.2),
+                            option: entry.token.clone(),
+                            reason,
+                        }
+                        .to_string(),
+                        entry.start_pos.clone(),
+                    );
                 }
             };
         }
@@ -311,42 +309,45 @@ fn parse_block(
         choices_per_local.insert(String::from(locale), choices_values);
     }
 
-    // let mnemo = require_one("MNEMO", &mut errors);
+    // let mnemo = require_one("MNEMO", diag);
 
     let apparence =
-        get_last("APPARENCE", &mut errors).and_then(|token_info| match token_info.token.as_str() {
+        get_last("APPARENCE", diag).and_then(|token_info| match token_info.token.as_str() {
             "LIST" | "LISTE IS EDITABLE" | "TOMLIST" => Some(GuiControl::List),
             "DYNLIST" => Some(GuiControl::DynList),
             "DYNLIST2" | "LISTE IS SELECT" => Some(GuiControl::MultipleDynList),
             "TUPLE" => Some(GuiControl::Tuple),
             "FILE_OR_FOLDER" | "LISTE IS FICHIER" => Some(GuiControl::Path),
             other => {
-                errors.push(Box::new(DicoParseError::InvalidValue {
-                    field: "APPARENCE".into(),
-                    reason: format!("unknown apparence '{}'", other),
-                    pos: token_info.start_pos.clone(),
-                }));
+                diag.error(
+                    DicoParseError::InvalidValue {
+                        field: "APPARENCE".into(),
+                        reason: format!("unknown apparence '{}'", other),
+                    }
+                    .to_string(),
+                    token_info.start_pos.clone(),
+                );
                 None
             }
         });
 
     // let index: u32 = parse_integer_field(
     //     "INDEX",
-    //     get_one("INDEX", &mut errors),
-    //     &mut errors,
+    //     get_one("INDEX", diag),
+    //     diag,
     //     block_pos,
     // );
 
-    let submit = get_val_one("SUBMIT", &mut errors)
+    let submit = get_val_one("SUBMIT", diag)
         .map(|s| parse_semicolon_list(&s, false))
         .unwrap_or_default();
 
-    let niveau: i32 = get_one("NIVEAU", &mut errors)
-        .map(|token_info| parse_integer_field("NIVEAU", Some(token_info), &mut errors, block_pos))
+    let niveau: i32 = get_one("NIVEAU", diag)
+        .map(|token_info| parse_integer_field("NIVEAU", Some(token_info), diag, block_pos))
         .unwrap_or(1);
 
-    let controle = get_n("CONTROLE", 2, &mut errors)
-        .and_then(|infos| parse_controle(&infos[0], &infos[1], &mut errors));
+    let controle =
+        get_n("CONTROLE", 2, diag).and_then(|infos| parse_controle(&infos[0], &infos[1], diag));
 
     let choices_cnt = LOCALES.iter().map(|locale| {
         text_desc
@@ -357,31 +358,38 @@ fn parse_block(
     match all_equals(choices_cnt) {
         Ok(_) => {}
         Err((cnt1, cnt2)) => {
-            errors.push(Box::new(DicoParseError::InconsistentChoiceOption {
-                pos: block_pos.clone(),
-                cnt1,
-                cnt2,
-            }));
+            diag.error(
+                DicoParseError::InconsistentChoiceOption { cnt1, cnt2 }.to_string(),
+                block_pos.clone(),
+            );
         }
     }
 
-    if !errors.is_empty() {
-        return Err(errors);
-    }
+    let compose = get_val_one("COMPOSE", diag);
+    let comport = fields.get("COMPORT").map(|kpi| {
+        kpi.values
+            .iter()
+            .map(|token_info| token_info.token.clone())
+            .collect()
+    });
 
-    Ok(DicoKeyword {
-        text_desc,
-        type_,
-        // index,
-        nargs: taille,
-        submit,
-        // mnemo,
-        boundaries: controle,
-        selection_control: apparence,
-        compose: get_val_one("COMPOSE", &mut errors),
-        comport: get_val_one("COMPORT", &mut errors),
-        level: niveau,
-    })
+    if !diag.has_errors(false) {
+        Some(DicoKeyword {
+            text_desc,
+            type_,
+            // index,
+            nargs: taille,
+            submit,
+            // mnemo,
+            boundaries: controle,
+            selection_control: apparence,
+            compose,
+            comport,
+            level: niveau,
+        })
+    } else {
+        None // Errors already reported `diag`
+    }
 }
 
 struct DicoFieldParser {
@@ -393,7 +401,7 @@ struct DicoFieldParser {
     block_pos: TextLoc,
 
     /// All errors encountered during processing
-    pub errors: VecErrorPtr,
+    pub diag: TextParserDiagnostics,
 
     /// All keywords already parsed
     keywords: Vec<Rc<DicoKeyword>>,
@@ -426,11 +434,11 @@ const VALID_DICO_KEYS: [&str; 20] = [
 const NEW_BLOCK_KEY: [&str; 2] = ["NOM", "NOM1"];
 
 impl DamoclesParser for DicoFieldParser {
-    fn error(&mut self, e: ErrorPtr) {
-        self.errors.push(e);
+    fn diag(&mut self) -> &mut TextParserDiagnostics {
+        &mut self.diag
     }
 
-    fn cmd(&mut self, cmd: TokenInfo) -> Result<DamoclesCommandStatus, Box<dyn std::error::Error>> {
+    fn cmd(&mut self, cmd: TokenInfo) -> Option<DamoclesCommandStatus> {
         let mut exit_code = DamoclesCommandStatus::Success;
         // TODO: better processing of "LIS", "ETA" & "IND" command.
         // For now, they are handled the same way
@@ -443,10 +451,11 @@ impl DamoclesParser for DicoFieldParser {
                 dbg!(&self.fields);
             }
             "STO" => {
-                return Err(Box::new(DamoclesError::StopCommand {
-                    cmd: cmd.token,
-                    pos: cmd.start_pos,
-                }));
+                self.diag.error(
+                    DamoclesError::StopCommand { cmd: cmd.token }.to_string(),
+                    cmd.start_pos,
+                );
+                return None;
             }
             "FIN" => {
                 exit_code = DamoclesCommandStatus::Exit;
@@ -455,14 +464,15 @@ impl DamoclesParser for DicoFieldParser {
                 eprintln!("cmd DOC is deprecated");
             }
             _ => {
-                return Err(Box::new(DamoclesError::UnknownCommand {
-                    cmd: cmd.token,
-                    pos: cmd.start_pos,
-                }));
+                self.diag.error(
+                    DamoclesError::UnknownCommand { cmd: cmd.token }.to_string(),
+                    cmd.start_pos,
+                );
+                return None;
             }
         };
 
-        Ok(exit_code)
+        Some(exit_code)
     }
 
     fn loc(&self, pos: (usize, usize)) -> TextLoc {
@@ -491,11 +501,10 @@ impl DamoclesParser for DicoFieldParser {
                         // However, it appears that telemac dico (such as telemac3d.dico or khione.dico) contain
                         // duplicated key. Thus we must ignore such errors if we want to be 100% compatible with
                         // telemac
-                        // self.error(Box::new(DicoParseError::DuplicatedKey {
+                        // diag.warn(&DicoParseError::DuplicatedKey {
                         //     field: kpi.key.token.clone(),
-                        //     pos: kpi.key.start_pos.clone(),
                         //     block_pos: self.block_pos.clone(),
-                        // }));
+                        // }, kpi.key.start_pos.clone());
                         entry.insert(kpi);
                         None
                     }
@@ -514,23 +523,21 @@ impl DamoclesParser for DicoFieldParser {
                 self.block_pos = block_pos;
             }
         } else {
-            self.error(Box::new(DicoParseError::UnknownField {
-                field: kpi.key.token.to_string(),
-                pos: kpi.key.start_pos.clone(),
-            }));
+            self.diag.error(
+                DicoParseError::UnknownField {
+                    field: kpi.key.token.to_string(),
+                }
+                .to_string(),
+                kpi.key.start_pos.clone(),
+            );
         }
     }
 }
 
 impl DicoFieldParser {
     fn process_block(&mut self) {
-        match parse_block(&self.fields, &self.block_pos) {
-            Ok(keyword) => {
-                self.keywords.push(Rc::new(keyword));
-            }
-            Err(errors) => {
-                self.errors.extend(errors);
-            }
+        if let Some(keyword) = parse_block(&self.fields, &self.block_pos, &mut self.diag) {
+            self.keywords.push(Rc::new(keyword));
         }
     }
 
@@ -564,7 +571,7 @@ impl DicoFieldParser {
 fn parse_integer_field<T: PrimInt + Default + FromStr>(
     name: &'static str,
     description: Option<&TokenInfo>,
-    errors: &mut VecErrorPtr,
+    diag: &mut TextParserDiagnostics,
     block_pos: &TextLoc,
 ) -> T
 where
@@ -572,18 +579,21 @@ where
 {
     match description {
         Some(desc) => desc.token.trim().parse::<T>().unwrap_or_else(|e| {
-            errors.push(Box::new(DicoParseError::InvalidValue {
-                field: name.into(),
-                reason: format!("'{}' is not a valid integer: {:#}", desc.token, e),
-                pos: desc.start_pos.clone(),
-            }));
+            diag.error(
+                DicoParseError::InvalidValue {
+                    field: name.into(),
+                    reason: format!("'{}' is not a valid integer: {:#}", desc.token, e),
+                }
+                .to_string(),
+                desc.start_pos.clone(),
+            );
             T::default()
         }),
         None => {
-            errors.push(Box::new(DicoParseError::MissingField {
-                field: name,
-                pos: block_pos.clone(),
-            }));
+            diag.error(
+                DicoParseError::MissingField { field: name }.to_string(),
+                block_pos.clone(),
+            );
             T::default()
         }
     }
@@ -592,7 +602,7 @@ where
 fn parse_controle(
     min: &TokenInfo,
     max: &TokenInfo,
-    errors: &mut VecErrorPtr,
+    diag: &mut TextParserDiagnostics,
 ) -> Option<(f64, f64)> {
     match (
         min.token.trim().parse::<f64>(),
@@ -600,19 +610,25 @@ fn parse_controle(
     ) {
         (Ok(min_float), Ok(max_float)) => Some((min_float, max_float)),
         (Err(min_err), _) => {
-            errors.push(Box::new(DicoParseError::InvalidValue {
-                field: "CONTROL".to_owned(),
-                reason: format!("Invalid min value '{}': {}", min.token, min_err),
-                pos: min.start_pos.clone(),
-            }));
+            diag.error(
+                DicoParseError::InvalidValue {
+                    field: "CONTROL".to_owned(),
+                    reason: format!("Invalid min value '{}': {}", min.token, min_err),
+                }
+                .to_string(),
+                min.start_pos.clone(),
+            );
             None
         }
         (_, Err(max_err)) => {
-            errors.push(Box::new(DicoParseError::InvalidValue {
-                field: "CONTROL".to_owned(),
-                reason: format!("Invalid max value '{}': {}", max.token, max_err),
-                pos: max.start_pos.clone(),
-            }));
+            diag.error(
+                DicoParseError::InvalidValue {
+                    field: "CONTROL".to_owned(),
+                    reason: format!("Invalid max value '{}': {}", max.token, max_err),
+                }
+                .to_string(),
+                max.start_pos.clone(),
+            );
             None
         }
     }

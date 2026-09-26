@@ -95,7 +95,7 @@ fn test_finds_file_deeply_nested() {
 
 #[test]
 fn test_prefers_shallow_over_deep() {
-    // File exists at root level and also in a subdir — root wins
+    // File exists at root level and also in a subdir - root wins
     let root = make_nested_dir(&["sub"], &[("", "config.toml"), ("sub", "config.toml")]);
     let result = find_file_in_dirs("config.toml", &[root.path()]).unwrap();
     assert_eq!(result, root.path().join("config.toml"));

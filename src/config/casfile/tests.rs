@@ -1,7 +1,10 @@
-use super::super::parse_helpers::DamoclesError;
+use std::assert_matches;
+
 use super::dicofile::parse;
 use super::dicofile::Dico;
 use super::*;
+
+use crate::aui::diagnostic::collector::Severity;
 
 fn make_dico() -> Dico {
     let dico_content = indoc::indoc! {"
@@ -90,10 +93,10 @@ fn parse_ok(input: &str) -> HashMap<String, ConfigValue> {
     parser.parse(input).expect("Expected successful parse")
 }
 
-fn parse_err(input: &str) -> Vec<Box<dyn std::error::Error>> {
+fn parse_err(input: &str) -> TextParserDiagnostics {
     let dico = make_dico();
     let parser = Parser::new(&dico);
-    parser.parse(input).expect_err("Expected parse errors")
+    parser.parse(input).expect_err("Expected parse diagnostics")
 }
 
 // --- Happy path ---
@@ -317,87 +320,103 @@ fn test_last_value_wins_on_duplicate_key() {
 
 #[test]
 fn test_unknown_key_produces_error() {
-    let mut errors = parse_err("my cat = fluffy");
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<ParseError>());
-    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
-    assert!(matches!(*parse_error, ParseError::UnknownKey { pos: _, key: k } if k == "my cat"));
+    let diagnostics = parse_err("my cat = fluffy");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
+    assert_matches!(diag0.severity, Severity::Error);
+    assert!(diag0.message.contains("Unknown key"));
+    assert!(diag0.message.contains("my cat"));
 }
 
 #[test]
 fn test_invalid_integer() {
-    let mut errors = parse_err("my age = olderthandirt");
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<ParseError>());
-    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
-    assert!(matches!(*parse_error, ParseError::InvalidValue { key, .. } if key == "my age"));
+    let diagnostics = parse_err("my age = olderthandirt");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
+    assert_matches!(diag0.severity, Severity::Error);
+    assert!(diag0.message.contains("Invalid value for key"));
+    assert!(diag0.message.contains("my age"));
 }
 
 #[test]
 fn test_out_of_bound_integer() {
-    let mut errors = parse_err("my age = -5");
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<ParseError>());
-    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+    let diagnostics = parse_err("my age = -5");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
+    assert_matches!(diag0.severity, Severity::Error);
 
-    assert!(matches!(*parse_error, ParseError::OutOfBound { key, .. } if key == "my age"));
+    assert!(diag0.message.contains("Value out of bound "));
+    assert!(diag0.message.contains("my age"));
 }
 
 #[test]
 fn test_out_of_bound_integer_collection() {
-    let mut errors = parse_err("AGE OF CHILDREN = 1;-10;3;4");
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<ParseError>());
-    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+    let diagnostics = parse_err("AGE OF CHILDREN = 1;-10;3;4");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
+    assert_matches!(diag0.severity, Severity::Error);
 
-    assert!(matches!(*parse_error, ParseError::OutOfBound { key, .. } if key == "AGE OF CHILDREN"));
+    assert!(diag0.message.contains("Value out of bound "));
+    assert!(diag0.message.contains("AGE OF CHILDREN"));
 }
 
 #[test]
 fn test_out_of_bound_float_collection() {
-    let mut errors = parse_err("SIZE OF CHILDREN = 0.75;0.01;1.5");
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<ParseError>());
-    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+    let diagnostics = parse_err("SIZE OF CHILDREN = 0.75;0.01;1.5");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
+    assert_matches!(diag0.severity, Severity::Error);
 
-    assert!(
-        matches!(*parse_error, ParseError::OutOfBound { key, .. } if key == "SIZE OF CHILDREN")
-    );
+    assert!(diag0.message.contains("Value out of bound "));
+    assert!(diag0.message.contains("SIZE OF CHILDREN"));
 }
 
 #[test]
 fn test_invalid_float() {
-    let mut errors = parse_err("my favorite number = 'a lot'");
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<ParseError>());
-    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
-
-    assert!(
-        matches!(*parse_error, ParseError::InvalidValue { key, .. } if key == "my favorite number")
-    );
+    let diagnostics = parse_err("my favorite number = 'a lot'");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
+    assert_matches!(diag0.severity, Severity::Error);
+    assert!(diag0.message.contains("Invalid value for key"));
+    assert!(diag0.message.contains("my favorite number"));
 }
 
 #[test]
 fn test_invalid_boolean() {
-    let mut errors = parse_err("am i serious = maybe");
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<ParseError>());
-    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+    let diagnostics = parse_err("am i serious = maybe");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
+    assert_matches!(diag0.severity, Severity::Error);
 
-    assert!(matches!(*parse_error, ParseError::InvalidValue { key, .. } if key == "am i serious"));
+    assert!(diag0.message.contains("Invalid value for key"));
+    assert!(diag0.message.contains("am i serious"));
 }
 
 #[test]
 fn test_missing_equals_sign() {
-    let mut errors = parse_err("my age 25");
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<DamoclesError>());
-    let parse_error: Box<DamoclesError> = err0.downcast().expect("not a DamoclesError");
+    let diagnostics = parse_err("my age 25");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
 
-    assert!(matches!(
-        *parse_error,
-        DamoclesError::MissingEndValue { .. }
-    ));
+    assert_matches!(diag0.severity, Severity::Error);
+
+    assert!(diag0.message.contains("Missing value for key"));
 }
 
 #[test]
@@ -407,8 +426,8 @@ fn test_multiple_errors_collected() {
         my age = olderthandirt
         missing equals
     "};
-    let errors = parse_err(input);
-    assert_eq!(errors.len(), 3);
+    let diagnostics = parse_err(input);
+    assert_eq!(diagnostics.all().len(), 3);
 }
 
 #[test]
@@ -416,8 +435,8 @@ fn test_valid_and_invalid_lines_mixed() {
     let input = "my age = 25\nmy cat = fluffy";
     let dico = make_dico();
     let parser = Parser::new(&dico);
-    let errors = parser.parse(input).expect_err("should have errors");
-    assert_eq!(errors.len(), 1);
+    let diagnostics = parser.parse(input).expect_err("should have diagnostics");
+    assert_eq!(diagnostics.all().len(), 1);
 }
 
 #[test]
@@ -435,13 +454,16 @@ fn test_good_choice() {
 #[test]
 fn test_wrong_choice() {
     let input = "sexe des enfants = dog;girl";
-    let mut errors = parse_err(input);
+    let diagnostics = parse_err(input);
 
-    let err0 = errors.pop().expect("should have one error reported");
-    assert!(err0.is::<ParseError>());
-    let parse_error: Box<ParseError> = err0.downcast().expect("not a ParseError");
+    let diag0 = diagnostics
+        .all()
+        .first()
+        .expect("should have one error reported");
+    assert_matches!(diag0.severity, Severity::Error);
 
-    assert!(matches!(*parse_error, ParseError::BadChoice { key, .. } if key == "sexe des enfants"));
+    assert!(diag0.message.contains("Invalid value for key"));
+    assert!(diag0.message.contains("sexe des enfants"));
 }
 
 // Ignore some french works for spelling

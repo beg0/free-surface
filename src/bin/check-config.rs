@@ -9,7 +9,12 @@ use std::str::FromStr;
 use clap::Parser;
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
-use free_surface::aui::Format;
+use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
+use free_surface::aui::diagnostic::reporter::{
+    create_text_diagnostic_renderer, TextDiagnosticsRendererOptions,
+};
+use free_surface::aui::{DiagFormat, Format};
+
 use free_surface::config::configvalue::ConfigValue;
 use free_surface::config::dicofile::DicoKeyword;
 use free_surface::config::{self, dicofile::Dico};
@@ -70,6 +75,14 @@ struct Args {
     /// Supported value: help, choice_option, default_value, type, nargs, boundaries
     #[arg(long, value_delimiter = ',')]
     extra_doc: Vec<DocInfo>,
+
+    /// How diagnostics are rendered
+    #[arg(long, value_enum, default_value_t=DiagFormat::Terminal)]
+    diagnostics_format: DiagFormat,
+
+    /// Use color in diagnostics
+    #[arg(long, default_value_t=clap::ColorChoice::Auto)]
+    diagnostics_color: clap::ColorChoice,
 }
 
 impl FromStr for DocInfo {
@@ -272,21 +285,49 @@ fn dump_config(
     Ok(())
 }
 
-fn run(args: &Args) -> Result<(), Errors> {
-    let dico = config::dicofile::parse_file(&args.dico)?;
+fn run(args: &Args) -> Result<usize, Errors> {
+    let dico = match config::dicofile::parse_file(&args.dico) {
+        Ok(dico) => dico,
+        Err(diag) => {
+            print_diagnostics(&diag, args)?;
+            return Ok(diag.all().len());
+        }
+    };
+
     let parser = config::casfile::Parser::new(&dico);
 
-    let config = if args.full_dump {
+    let parsing_result = if args.full_dump {
         parser.config_from_file(&args.config)
     } else {
         parser.parse_file(&args.config)
-    }?;
+    };
 
-    if args.dump || args.full_dump {
-        dump_config(&config, &dico, args)
-    } else {
-        Ok(())
+    match parsing_result {
+        Ok(config) => {
+            if args.dump || args.full_dump {
+                dump_config(&config, &dico, args)?
+            }
+            Ok(0)
+        }
+        Err(diag) => {
+            print_diagnostics(&diag, args)?;
+            Ok(diag.all().len())
+        }
     }
+}
+
+fn print_diagnostics(diagnostics: &TextParserDiagnostics, args: &Args) -> Result<(), Errors> {
+    let stderr = io::stderr();
+
+    let options = match args.diagnostics_format {
+        DiagFormat::Terminal => TextDiagnosticsRendererOptions::Terminal {
+            color: args.diagnostics_color,
+        },
+        DiagFormat::Json => TextDiagnosticsRendererOptions::Json { pretty: false },
+    };
+    let mut renderer = create_text_diagnostic_renderer(stderr.lock(), options);
+
+    renderer.as_mut().render(diagnostics).map_err(one_err)
 }
 
 // ---------------------------------------------------------------------------
@@ -297,12 +338,16 @@ fn main() -> ExitCode {
     let args = Args::parse();
 
     match run(&args) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(error_cnt) => {
+            let clamped = std::cmp::min(error_cnt, 125);
+            ExitCode::from(clamped as u8)
+        }
         Err(errors) => {
             for e in errors {
                 eprintln!("Error: {e}");
             }
-            ExitCode::FAILURE
+
+            ExitCode::from(126)
         }
     }
 }

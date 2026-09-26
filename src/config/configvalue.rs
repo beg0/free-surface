@@ -26,47 +26,39 @@ pub enum ConfigValue {
     FloatCollection(Vec<f64>),
 }
 
-pub fn parse_value_2<E, ErrorMapper>(
-    values: &Vec<TokenInfo>,
+pub fn parse_value_2<'a>(
+    values: &'a Vec<TokenInfo>,
     kind: &DicoType,
     nargs: usize,
-    error_mapper: ErrorMapper,
-) -> Result<ConfigValue, Vec<E>>
-where
-    ErrorMapper: Fn(&TokenInfo, String) -> E,
-{
+) -> Result<ConfigValue, Vec<(&'a TokenInfo, String)>> {
     // Be very permissive here
     // consider it's a scalar if and only if dico says so (indeed `nargs` came from the dico)
     // and the value to parse too
     if nargs == 1 && values.len() == 1 {
-        parse_single_value_2(&values[0], kind, error_mapper)
+        parse_single_value_2(&values[0], kind).map_err(|e| vec![e])
     } else {
-        parse_collection_values_2(values, kind, error_mapper)
+        parse_collection_values_2(values, kind)
     }
 }
 
-pub fn parse_single_value_2<E, ErrorMapper>(
-    value: &TokenInfo,
+pub fn parse_single_value_2<'a>(
+    value: &'a TokenInfo,
     kind: &DicoType,
-    error_mapper: ErrorMapper,
-) -> Result<ConfigValue, Vec<E>>
-where
-    ErrorMapper: Fn(&TokenInfo, String) -> E,
-{
+) -> Result<ConfigValue, (&'a TokenInfo, String)> {
     let raw = value.token.as_str();
     match kind {
         DicoType::Logical => parse_bool(raw)
             .map(ConfigValue::Boolean)
-            .map_err(|err| vec![error_mapper(value, err)]),
+            .map_err(|err| (value, err)),
         DicoType::Integer => i64::from_str(raw).map(ConfigValue::Integer).map_err(|err| {
             let msg = format!("'{}' is not a valid integer: {}", raw, err);
-            vec![error_mapper(value, msg)]
+            (value, msg)
         }),
         DicoType::Real => parse_fortran_float(raw)
             .map(ConfigValue::Float)
             .map_err(|err| {
                 let msg = format!("'{}' is not a valid float: {}", raw, err);
-                vec![error_mapper(value, msg)]
+                (value, msg)
             }),
         // DicoType::Path => {
         //     let path = unquote_single(raw);
@@ -76,23 +68,19 @@ where
     }
 }
 
-fn parse_collection_values_2<E, ErrorMapper>(
-    value_list: &Vec<TokenInfo>,
+fn parse_collection_values_2<'a>(
+    value_list: &'a Vec<TokenInfo>,
     kind: &DicoType,
-    error_mapper: ErrorMapper,
-) -> Result<ConfigValue, Vec<E>>
-where
-    ErrorMapper: Fn(&TokenInfo, String) -> E,
-{
+) -> Result<ConfigValue, Vec<(&'a TokenInfo, String)>> {
     match kind {
         DicoType::Logical => {
             let mut converted_values: Vec<bool> = Vec::with_capacity(value_list.len());
-            let mut invalid_values: Vec<E> = Vec::new();
+            let mut invalid_values: Vec<(&'a TokenInfo, String)> = Vec::new();
             for entry in value_list {
                 let raw = entry.token.as_str();
                 match parse_bool(raw) {
                     Ok(val) => converted_values.push(val),
-                    Err(msg) => invalid_values.push(error_mapper(entry, msg)),
+                    Err(msg) => invalid_values.push((entry, msg)),
                 }
             }
             if invalid_values.is_empty() {
@@ -103,14 +91,14 @@ where
         }
         DicoType::Integer => {
             let mut converted_values: Vec<i64> = Vec::with_capacity(value_list.len());
-            let mut invalid_values: Vec<E> = Vec::new();
+            let mut invalid_values: Vec<(&'a TokenInfo, String)> = Vec::new();
             for entry in value_list {
                 let raw = entry.token.as_str();
                 match i64::from_str(raw) {
                     Ok(val) => converted_values.push(val),
                     Err(err) => {
                         let msg = format!("'{}' is not a valid integer: {}", raw, err);
-                        invalid_values.push(error_mapper(entry, msg));
+                        invalid_values.push((entry, msg));
                     }
                 }
             }
@@ -122,14 +110,14 @@ where
         }
         DicoType::Real => {
             let mut converted_values: Vec<f64> = Vec::with_capacity(value_list.len());
-            let mut invalid_values: Vec<E> = Vec::new();
+            let mut invalid_values: Vec<(&'a TokenInfo, String)> = Vec::new();
             for entry in value_list {
                 let raw = entry.token.as_str();
                 match parse_fortran_float(raw) {
                     Ok(val) => converted_values.push(val),
                     Err(err) => {
                         let msg = format!("'{}' is not a valid float: {}", raw, err);
-                        invalid_values.push(error_mapper(entry, msg));
+                        invalid_values.push((entry, msg));
                     }
                 }
             }
