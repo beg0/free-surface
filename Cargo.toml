@@ -29,6 +29,12 @@ sys-locale = "0.3"
 unic-langid = "0.9"
 thiserror = "2.0.18"
 
+fluent-message = {
+    git = "https://github.com/beg0/fluent-message.git",
+    rev = "a45621208c28e308980de7bce99a0bdfc3cc4886",
+    features=["i18n"]
+}
+
 [dev-dependencies]
 assert_cmd = "2"
 indoc = "2.0.7"

@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use fluent_message::FluentMessage;
+
 use super::configvalue;
 use super::configvalue::ConfigValue;
 use super::dicofile;
@@ -17,37 +19,30 @@ use super::textloc::TextLoc;
 
 use crate::aui::diagnostic::collector::TextParserDiagnostics;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, FluentMessage)]
+#[fluent(prefix = "cas-parse-diag")]
 pub enum ParseError {
-    #[error("Can't open file {filename} for reading: {error}")]
-    FileOpenFailed {
-        filename: String,
+    ReadFileFailure {
+        #[fluent(display)]
         error: std::io::Error,
     },
-    #[error("Unknown key: '{key}'")]
-    UnknownKey { key: String },
-    #[error("Invalid value for key '{key}': {reason}")]
-    InvalidValue { key: String, reason: String },
-    #[error("Too much values for key '{key}': got {got_count} but expected {expected_count}")]
-    TooMuchValues {
+    UnknownKey {
         key: String,
-        got_count: usize,
-        expected_count: usize,
     },
-    #[error(
-        "Value out of bound for key {key}: value should be between {min} and {max}, got '{value}'"
-    )]
+    InvalidValue {
+        key: String,
+        reason: String,
+    },
     OutOfBound {
         key: String,
         value: String,
         min: f64,
         max: f64,
     },
-    #[error("Invalid value for key {key}: {reason}")]
     BadChoice {
         key: String,
         value: String,
-        #[source]
+        #[fluent(display)]
         reason: dicofile::ChoiceValidationError,
     },
 }
@@ -77,8 +72,11 @@ impl<'a> Parser<'a> {
     ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
         let file_pos = TextLoc::from((&filename, 0));
 
-        let cascontent = std::fs::read_to_string(&filename).map_err(|err| {
-            TextParserDiagnostics::from_single_error(err.to_string(), file_pos.clone())
+        let cascontent = std::fs::read_to_string(&filename).map_err(|error| {
+            TextParserDiagnostics::from_single_error(
+                ParseError::ReadFileFailure { error },
+                file_pos.clone(),
+            )
         })?;
         self.parse_from_content_and_textloc(cascontent.as_str(), file_pos)
     }
@@ -174,10 +172,8 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
                 dbg!(&self.result);
             }
             "STO" => {
-                self.diag.error(
-                    DamoclesError::StopCommand { cmd: cmd.token }.to_string(),
-                    cmd.start_pos,
-                );
+                self.diag
+                    .error(DamoclesError::StopCommand { cmd: cmd.token }, cmd.start_pos);
                 return None;
             }
             "FIN" => {
@@ -188,7 +184,7 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             }
             _ => {
                 self.diag.error(
-                    DamoclesError::UnknownCommand { cmd: cmd.token }.to_string(),
+                    DamoclesError::UnknownCommand { cmd: cmd.token },
                     cmd.start_pos,
                 );
                 return None;
@@ -207,8 +203,7 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             self.diag.error(
                 ParseError::UnknownKey {
                     key: kpi.key.token.clone(),
-                }
-                .to_string(),
+                },
                 kpi.key.start_pos.clone(),
             );
             return;
@@ -228,8 +223,7 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
                         ParseError::InvalidValue {
                             key: kpi.key.token.clone(),
                             reason,
-                        }
-                        .to_string(),
+                        },
                         entry.start_pos.clone(),
                     );
                 }
@@ -248,8 +242,7 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
                             value: failed_value.token.clone(),
                             min: boundaries.0,
                             max: boundaries.1,
-                        }
-                        .to_string(),
+                        },
                         failed_value.start_pos.clone(),
                     );
                 }
@@ -269,8 +262,7 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
                                 key: kpi.key.token.clone(),
                                 value: failed_value.token.clone(),
                                 reason,
-                            }
-                            .to_string(),
+                            },
                             failed_value.start_pos.clone(),
                         );
                     }

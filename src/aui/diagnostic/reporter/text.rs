@@ -31,11 +31,16 @@ pub enum TextDiagnosticsRendererOptions {
 /// use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
 /// use free_surface::aui::diagnostic::reporter::{TextDiagnosticsRendererOptions, create_text_diagnostic_renderer};
 /// use clap::ColorChoice;
+/// use fluent_message::FluentMessage;
+///
+/// #[derive(FluentMessage)]
+/// struct ErrorMessage {
+/// }
 ///
 /// let mut stdio = std::io::stdout();
 /// let options =  TextDiagnosticsRendererOptions::Terminal { color: ColorChoice::Auto };
 /// let mut renderer = create_text_diagnostic_renderer(stdio, options);
-/// let diagnostics = TextParserDiagnostics::from_single_error("This is an error", TextLoc::default());
+/// let diagnostics = TextParserDiagnostics::from_single_error(ErrorMessage {}, TextLoc::default());
 /// renderer.as_mut().render(&diagnostics).expect("writing error")
 /// ```
 pub fn create_text_diagnostic_renderer<'a, W>(
@@ -63,16 +68,18 @@ mod tests {
     use crate::config::textloc::TextLoc;
     use serde_json::json;
 
-    const ERROR_MSG: &str = "this is an error msg";
     const BUGGY_FILE: &str = "corrupted_file.txt";
     const BUGGY_LINE: usize = 42;
+
+    #[derive(fluent_message::FluentMessage)]
+    struct TestMessage();
 
     fn get_rendered_diagnostics(options: TextDiagnosticsRendererOptions) -> String {
         let mut buf = Vec::with_capacity(128);
         let mut renderer = create_text_diagnostic_renderer(&mut buf, options);
 
         let diagnostics = TextParserDiagnostics::from_single_error(
-            ERROR_MSG,
+            TestMessage(),
             TextLoc::from((BUGGY_FILE, BUGGY_LINE)),
         );
 
@@ -92,13 +99,14 @@ mod tests {
             color: ColorChoice::Always,
         });
 
-        assert_eq!(
-            printed,
+        assert!(printed.starts_with(
             format!(
-                "\x1b[1m{}:{}:\x1b[0m \x1b[1m\x1b[31merror:\x1b[0m {}\n",
-                BUGGY_FILE, BUGGY_LINE, ERROR_MSG
+                "\x1b[1m{}:{}:\x1b[0m \x1b[1m\x1b[31merror:\x1b[0m ",
+                BUGGY_FILE, BUGGY_LINE
             )
-        );
+            .as_str()
+        ));
+        assert!(printed.contains("test-message"))
     }
 
     #[test]
@@ -107,10 +115,8 @@ mod tests {
             color: ColorChoice::Never,
         });
 
-        assert_eq!(
-            printed,
-            format!("{}:{}: error: {}\n", BUGGY_FILE, BUGGY_LINE, ERROR_MSG)
-        );
+        assert!(printed.starts_with(format!("{}:{}: error: ", BUGGY_FILE, BUGGY_LINE).as_str()));
+        assert!(printed.contains("test-message"))
     }
 
     #[test]
@@ -119,10 +125,8 @@ mod tests {
             color: ColorChoice::Auto,
         });
 
-        assert_eq!(
-            printed,
-            format!("{}:{}: error: {}\n", BUGGY_FILE, BUGGY_LINE, ERROR_MSG)
-        );
+        assert!(printed.starts_with(format!("{}:{}: error: ", BUGGY_FILE, BUGGY_LINE).as_str()));
+        assert!(printed.contains("test-message"))
     }
 
     #[test]
@@ -132,7 +136,7 @@ mod tests {
 
         let expected = json!([
         {
-            "message": ERROR_MSG,
+            "message": "Unknown localization key: \"test-message\"",
             "kind": "error",
             "locations": [
                 {

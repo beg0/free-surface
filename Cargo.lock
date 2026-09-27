@@ -445,6 +445,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluent-message"
+version = "0.1.0"
+source = "git+https://github.com/beg0/fluent-message.git?rev=a45621208c28e308980de7bce99a0bdfc3cc4886#a45621208c28e308980de7bce99a0bdfc3cc4886"
+dependencies = [
+ "fluent-bundle",
+ "fluent-i18n",
+ "fluent-message-derive",
+]
+
+[[package]]
+name = "fluent-message-derive"
+version = "0.1.0"
+source = "git+https://github.com/beg0/fluent-message.git?rev=a45621208c28e308980de7bce99a0bdfc3cc4886#a45621208c28e308980de7bce99a0bdfc3cc4886"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "fluent-syntax"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -516,6 +537,7 @@ dependencies = [
  "fluent-bundle",
  "fluent-i18n",
  "fluent-langneg",
+ "fluent-message",
  "fs4",
  "glob",
  "indoc",

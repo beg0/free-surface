@@ -104,26 +104,41 @@ mod tests {
     use crate::aui::diagnostic::collector::TextParserDiagnostics;
     use crate::config::textloc::TextLoc;
 
-    const ERROR_MSG: &str = "you made a mistake!";
     const FILE_WITH_ERROR: &str = "corrupted_file.txt";
     const ERROR_LINE: usize = 666;
 
-    const WARNING_MSG: &str = "Be careful!";
     const FILE_WITH_WARNING: &str = "strange_file.txt";
     const WARNING_LINE: usize = 42;
 
-    const HINT_MSG: &str = "Try that!";
     const FILE_WITH_HINT: &str = "no_clue_file.txt";
     const HINT_LINE: usize = 777;
 
+    #[derive(fluent_message::FluentMessage)]
+    #[fluent(id = "test-error-message")]
+    struct TestErrorMessage();
+
+    #[derive(fluent_message::FluentMessage)]
+    #[fluent(id = "test-warning-message")]
+    struct TestWarningMessage();
+
+    #[derive(fluent_message::FluentMessage)]
+    #[fluent(id = "test-hint-message")]
+    struct TestHintMessage();
+
     fn sample_diagnostics() -> TextParserDiagnostics {
         let mut diagnostics = TextParserDiagnostics::default();
-        diagnostics.error(ERROR_MSG, TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)));
+        diagnostics.error(
+            TestErrorMessage(),
+            TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)),
+        );
         diagnostics.warning(
-            WARNING_MSG,
+            TestWarningMessage(),
             TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)),
         );
-        diagnostics.hint(HINT_MSG, TextLoc::from((FILE_WITH_HINT, HINT_LINE)));
+        diagnostics.hint(
+            TestHintMessage(),
+            TextLoc::from((FILE_WITH_HINT, HINT_LINE)),
+        );
         diagnostics
     }
 
@@ -144,27 +159,30 @@ mod tests {
         let lines: Vec<&str> = printed.lines().collect();
 
         assert_eq!(lines.len(), 3);
-        assert_eq!(
-            lines[0],
+        assert!(lines[0].starts_with(
             format!(
-                "\x1b[1m{}:{}:\x1b[0m \x1b[1m\x1b[31m{}:\x1b[0m {}",
-                FILE_WITH_ERROR, ERROR_LINE, "error", ERROR_MSG
+                "\x1b[1m{}:{}:\x1b[0m \x1b[1m\x1b[31m{}:\x1b[0m ",
+                FILE_WITH_ERROR, ERROR_LINE, "error"
             )
-        );
-        assert_eq!(
-            lines[1],
+            .as_str()
+        ));
+        assert!(lines[0].contains("test-error-message"));
+        assert!(lines[1].starts_with(
             format!(
-                "\x1b[1m{}:{}:\x1b[0m \x1b[1m\x1b[35m{}:\x1b[0m {}",
-                FILE_WITH_WARNING, WARNING_LINE, "warning", WARNING_MSG
+                "\x1b[1m{}:{}:\x1b[0m \x1b[1m\x1b[35m{}:\x1b[0m ",
+                FILE_WITH_WARNING, WARNING_LINE, "warning"
             )
-        );
-        assert_eq!(
-            lines[2],
+            .as_str()
+        ));
+        assert!(lines[1].contains("test-warning-message"));
+        assert!(lines[2].starts_with(
             format!(
-                "\x1b[1m{}:{}:\x1b[0m \x1b[1m\x1b[36m{}:\x1b[0m {}",
-                FILE_WITH_HINT, HINT_LINE, "hint", HINT_MSG
+                "\x1b[1m{}:{}:\x1b[0m \x1b[1m\x1b[36m{}:\x1b[0m ",
+                FILE_WITH_HINT, HINT_LINE, "hint"
             )
-        );
+            .as_str()
+        ));
+        assert!(lines[2].contains("test-hint-message"));
     }
 
     #[test]
