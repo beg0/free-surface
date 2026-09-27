@@ -4,6 +4,7 @@ use std::io::Write;
 
 use super::super::super::collector::Severity;
 use super::super::super::collector::TextParserDiagnostics;
+use crate::t;
 use anstyle::{AnsiColor, Effects, Style};
 
 use super::TextDiagnosticsRenderer;
@@ -79,17 +80,17 @@ impl<W: Write> TerminalTextDiagnosticsRenderer<W> {
         match severity {
             Severity::Error => {
                 palette.error.write_to(&mut self.writer)?;
-                write!(self.writer, "error:")?;
+                write!(self.writer, "{}:", t!("text-diag-label-error"))?;
                 palette.error.write_reset_to(&mut self.writer)?;
             }
             Severity::Warning => {
                 palette.warning.write_to(&mut self.writer)?;
-                write!(self.writer, "warning:")?;
+                write!(self.writer, "{}:", t!("text-diag-label-warning"))?;
                 palette.warning.write_reset_to(&mut self.writer)?;
             }
             Severity::Hint => {
                 palette.hint.write_to(&mut self.writer)?;
-                write!(self.writer, "hint:")?;
+                write!(self.writer, "{}:", t!("text-diag-label-hint"))?;
                 palette.hint.write_reset_to(&mut self.writer)?;
             }
         }
