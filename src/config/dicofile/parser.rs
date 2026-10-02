@@ -612,7 +612,7 @@ fn parse_controle(
         (Err(min_err), _) => {
             diag.error(
                 DicoParseError::InvalidValue {
-                    field: "CONTROL".to_owned(),
+                    field: "CONTROLE".to_owned(),
                     reason: format!("Invalid min value '{}': {}", min.token, min_err),
                 }
                 .to_string(),
@@ -623,7 +623,7 @@ fn parse_controle(
         (_, Err(max_err)) => {
             diag.error(
                 DicoParseError::InvalidValue {
-                    field: "CONTROL".to_owned(),
+                    field: "CONTROLE".to_owned(),
                     reason: format!("Invalid max value '{}': {}", max.token, max_err),
                 }
                 .to_string(),
