@@ -305,7 +305,7 @@ fn run(args: &Args) -> Result<usize, Errors> {
     match parsing_result {
         Ok(config) => {
             if args.dump || args.full_dump {
-                dump_config(&config, &dico, args)?
+                dump_config(&config, &dico, args)?;
             }
             Ok(0)
         }
