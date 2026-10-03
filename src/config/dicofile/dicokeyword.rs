@@ -42,7 +42,6 @@ pub struct KeywordTextDescription {
 
     pub classification: Vec<String>, // Classification, per levels
 
-    #[allow(dead_code)]
     pub help: String, // Keyword description
 }
 
