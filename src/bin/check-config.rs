@@ -147,7 +147,7 @@ fn build_config_tree<'a>(
 ) -> SectionEntry<'a> {
     // Rebuild the hierarchy of the dictionary
     let mut tree = SectionEntry::SubSection {
-        name: String::from(""),
+        name: String::new(),
         content: BTreeMap::new(),
     };
 
