@@ -36,13 +36,20 @@ impl fmt::Display for ChoiceOptionHelp {
 /// Localized data for a [DicoKeyword]
 #[derive(Debug, Clone)]
 pub struct KeywordTextDescription {
-    pub name: String,                        // Keyword name
-    pub choices_help: Vec<ChoiceOptionHelp>, // Help text for each possible values
-    pub default_val: Option<ConfigValue>,    // Default value
+    /// Keyword name
+    pub name: String,
 
-    pub classification: Vec<String>, // Classification, per levels
+    /// Help text for each possible values
+    pub choices_help: Vec<ChoiceOptionHelp>,
 
-    pub help: String, // Keyword description
+    /// Default value
+    pub default_val: Option<ConfigValue>,
+
+    /// Classification, per levels
+    pub classification: Vec<String>,
+
+    /// Keyword description
+    pub help: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
