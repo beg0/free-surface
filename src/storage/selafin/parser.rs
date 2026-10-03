@@ -444,8 +444,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
             pos: reader.stream_position()?,
             message: format!(
                 "Inconsistent number of points.
-                Header says {} points, x record says {} points, y records says {}",
-                npoin3, x_len, y_len,
+                Header says {npoin3} points, x record says {x_len} points, y records says {y_len}"
             ),
         });
     }
@@ -576,7 +575,7 @@ where
         if t.is_empty() {
             return Err(binrw::Error::AssertFail {
                 pos: reader.stream_position()?,
-                message: format!("Time entry for history #{} is empty", time_idx),
+                message: format!("Time entry for history #{time_idx} is empty"),
             });
         }
 

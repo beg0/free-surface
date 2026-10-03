@@ -186,7 +186,7 @@ fn build_config_tree<'a>(
 }
 
 fn as_bullet_list<T: fmt::Display>(lst: &[T]) -> String {
-    lst.iter().map(|entry| format!("- {}\n", entry)).collect()
+    lst.iter().map(|entry| format!("- {entry}\n")).collect()
 }
 
 fn display_extra_doc(
