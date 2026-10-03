@@ -199,6 +199,9 @@ fn display_extra_doc(
         let text = match doc_req {
             DocInfo::Help => text_desc.help.clone(),
             DocInfo::ChoiceOptions => {
+                if text_desc.choices_help.is_empty() {
+                    continue;
+                }
                 format!(
                     "Possible values\n{}",
                     as_bullet_list(&text_desc.choices_help)
