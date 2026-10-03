@@ -1,10 +1,15 @@
 //! # Configuration Value
 //!
+use fluent_i18n::ToFluentValue;
+use fluent_message::FluentMessage;
+
 use super::parse_helpers::{parse_fortran_float, unquote_single, TokenInfo};
 use std::fmt::{self, Debug};
 use std::str::FromStr;
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::t;
+
+#[derive(Debug, Clone, PartialEq, FluentMessage)]
 pub enum DicoType {
     String,
     Integer,
@@ -26,6 +31,11 @@ pub enum ConfigValue {
     FloatCollection(Vec<f64>),
 }
 
+impl ToFluentValue for DicoType {
+    fn to_fluent_value(&self) -> fluent_i18n::FluentValue<'static> {
+        fluent_i18n::FluentValue::String(t!(self.msg_id()).into())
+    }
+}
 pub fn parse_value_2<'a>(
     values: &'a Vec<TokenInfo>,
     kind: &DicoType,
@@ -392,6 +402,12 @@ impl fmt::Display for ConfigValue {
                     .join(", ")
             ),
         }
+    }
+}
+
+impl ToFluentValue for ConfigValue {
+    fn to_fluent_value(&self) -> fluent_i18n::FluentValue<'static> {
+        fluent_i18n::FluentValue::String(self.to_string().into())
     }
 }
 
