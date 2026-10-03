@@ -229,8 +229,8 @@ fn display_extra_doc(
     Ok(())
 }
 
-fn display_config<'a>(
-    tree: SectionEntry<'a>,
+fn display_config(
+    tree: SectionEntry<'_>,
     render: &mut dyn ConfigViewer,
     args: &Args,
 ) -> Result<(), Errors> {
