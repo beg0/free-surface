@@ -343,6 +343,7 @@ fn main() -> ExitCode {
     match run(&args) {
         Ok(error_cnt) => {
             let clamped = std::cmp::min(error_cnt, 125);
+            #[allow(clippy::cast_possible_truncation)]
             ExitCode::from(clamped as u8)
         }
         Err(errors) => {
