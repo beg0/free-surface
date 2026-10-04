@@ -1,5 +1,9 @@
+use crate::config::textloc::TextLoc;
+
 use super::*;
 use std::path::PathBuf;
+
+const FILENAME: &str = "wonderful_file.txt";
 
 // --- Helpers ---
 
@@ -10,6 +14,34 @@ fn strings(v: &[&str]) -> Vec<String> {
 fn paths(v: &[&str]) -> Vec<PathBuf> {
     v.iter().map(PathBuf::from).collect()
 }
+
+fn to_token(v: &str) -> TokenInfo {
+    let start_pos = TextLoc::from((FILENAME, 5));
+    let end_pos = start_pos.clone_with_line_offset_col(0, v.len());
+    TokenInfo {
+        token: v.to_owned(),
+        start_pos,
+        end_pos,
+    }
+}
+
+fn to_tokens(values: &[&str]) -> Vec<TokenInfo> {
+    let mut last_col: usize = 5;
+    values
+        .iter()
+        .map(|v| {
+            let start_pos = TextLoc::from((FILENAME, last_col + 5));
+            let end_pos = start_pos.clone_with_line_offset_col(0, v.len());
+            last_col = end_pos.column();
+            TokenInfo {
+                token: (*v).to_owned(),
+                start_pos,
+                end_pos,
+            }
+        })
+        .collect()
+}
+
 // =========================================================
 // parse_bool
 // =========================================================
@@ -90,7 +122,7 @@ fn test_error_message_contains_input() {
 #[test]
 fn test_string_unquoted() {
     assert_eq!(
-        parse_single_value("hello", &DicoType::String).unwrap(),
+        parse_single_value_2(&to_token("hello"), &DicoType::String).unwrap(),
         ConfigValue::String("hello".into())
     );
 }
@@ -98,7 +130,7 @@ fn test_string_unquoted() {
 #[test]
 fn test_string_quoted() {
     assert_eq!(
-        parse_single_value("'hello world'", &DicoType::String).unwrap(),
+        parse_single_value_2(&to_token("'hello world'"), &DicoType::String).unwrap(),
         ConfigValue::String("hello world".into())
     );
 }
@@ -106,7 +138,7 @@ fn test_string_quoted() {
 #[test]
 fn test_string_empty() {
     assert_eq!(
-        parse_single_value("", &DicoType::String).unwrap(),
+        parse_single_value_2(&to_token(""), &DicoType::String).unwrap(),
         ConfigValue::String("".into())
     );
 }
@@ -114,7 +146,7 @@ fn test_string_empty() {
 #[test]
 fn test_string_empty_quoted() {
     assert_eq!(
-        parse_single_value("''", &DicoType::String).unwrap(),
+        parse_single_value_2(&to_token("''"), &DicoType::String).unwrap(),
         ConfigValue::String("".into())
     );
 }
@@ -123,7 +155,7 @@ fn test_string_empty_quoted() {
 fn test_string_escaped_single_quote() {
     // '' inside quotes should be unescaped to '
     assert_eq!(
-        parse_single_value("'it''s fine'", &DicoType::String).unwrap(),
+        parse_single_value_2(&to_token("'it''s fine'"), &DicoType::String).unwrap(),
         ConfigValue::String("it's fine".into())
     );
 }
@@ -134,7 +166,7 @@ fn test_string_escaped_single_quote() {
 #[test]
 fn test_integer_positive() {
     assert_eq!(
-        parse_single_value("42", &DicoType::Integer).unwrap(),
+        parse_single_value_2(&to_token("42"), &DicoType::Integer).unwrap(),
         ConfigValue::Integer(42)
     );
 }
@@ -142,7 +174,7 @@ fn test_integer_positive() {
 #[test]
 fn test_integer_negative() {
     assert_eq!(
-        parse_single_value("-7", &DicoType::Integer).unwrap(),
+        parse_single_value_2(&to_token("-7"), &DicoType::Integer).unwrap(),
         ConfigValue::Integer(-7)
     );
 }
@@ -150,7 +182,7 @@ fn test_integer_negative() {
 #[test]
 fn test_integer_zero() {
     assert_eq!(
-        parse_single_value("0", &DicoType::Integer).unwrap(),
+        parse_single_value_2(&to_token("0"), &DicoType::Integer).unwrap(),
         ConfigValue::Integer(0)
     );
 }
@@ -159,25 +191,26 @@ fn test_integer_zero() {
 fn test_integer_max() {
     let raw = i64::MAX.to_string();
     assert_eq!(
-        parse_single_value(&raw, &DicoType::Integer).unwrap(),
+        parse_single_value_2(&to_token(&raw), &DicoType::Integer).unwrap(),
         ConfigValue::Integer(i64::MAX)
     );
 }
 
 #[test]
 fn test_integer_invalid_float() {
-    assert!(parse_single_value("3.14", &DicoType::Integer).is_err());
+    assert!(parse_single_value_2(&to_token("3.14"), &DicoType::Integer).is_err());
 }
 
 #[test]
 fn test_integer_invalid_word() {
-    let err = parse_single_value("notanumber", &DicoType::Integer).unwrap_err();
-    assert!(err.contains("notanumber"));
+    let token = to_token("notanumber");
+    let (err_token, _msg) = parse_single_value_2(&token, &DicoType::Integer).unwrap_err();
+    assert_eq!(err_token.token, "notanumber");
 }
 
 #[test]
 fn test_integer_invalid_empty() {
-    assert!(parse_single_value("", &DicoType::Integer).is_err());
+    assert!(parse_single_value_2(&to_token(""), &DicoType::Integer).is_err());
 }
 
 // DicoType::Real
@@ -187,7 +220,7 @@ fn test_integer_invalid_empty() {
 #[allow(clippy::approx_constant)]
 fn test_real_decimal() {
     assert_eq!(
-        parse_single_value("3.14", &DicoType::Real).unwrap(),
+        parse_single_value_2(&to_token("3.14"), &DicoType::Real).unwrap(),
         ConfigValue::Float(3.14)
     );
 }
@@ -195,7 +228,7 @@ fn test_real_decimal() {
 #[test]
 fn test_real_whole_number() {
     assert_eq!(
-        parse_single_value("42", &DicoType::Real).unwrap(),
+        parse_single_value_2(&to_token("42"), &DicoType::Real).unwrap(),
         ConfigValue::Float(42.0)
     );
 }
@@ -204,7 +237,7 @@ fn test_real_whole_number() {
 #[allow(clippy::approx_constant)]
 fn test_real_negative() {
     assert_eq!(
-        parse_single_value("-2.718", &DicoType::Real).unwrap(),
+        parse_single_value_2(&to_token("-2.718"), &DicoType::Real).unwrap(),
         ConfigValue::Float(-2.718)
     );
 }
@@ -212,20 +245,21 @@ fn test_real_negative() {
 #[test]
 fn test_real_scientific_notation() {
     assert_eq!(
-        parse_single_value("1.5e3", &DicoType::Real).unwrap(),
+        parse_single_value_2(&to_token("1.5e3"), &DicoType::Real).unwrap(),
         ConfigValue::Float(1500.0)
     );
 }
 
 #[test]
 fn test_real_invalid_word() {
-    let err = parse_single_value("notafloat", &DicoType::Real).unwrap_err();
-    assert!(err.contains("notafloat"));
+    let token = to_token("notafloat");
+    let (err_token, _msg) = parse_single_value_2(&token, &DicoType::Real).unwrap_err();
+    assert_eq!(err_token.token, "notafloat");
 }
 
 #[test]
 fn test_real_invalid_empty() {
-    assert!(parse_single_value("", &DicoType::Real).is_err());
+    assert!(parse_single_value_2(&to_token(""), &DicoType::Real).is_err());
 }
 
 // DicoType::Logical
@@ -235,7 +269,7 @@ fn test_real_invalid_empty() {
 fn test_logical_true_variants() {
     for val in &["true", "yes", "1", "on", "vrai", "oui", "TRUE", "OUI"] {
         assert_eq!(
-            parse_single_value(val, &DicoType::Logical).unwrap(),
+            parse_single_value_2(&to_token(val), &DicoType::Logical).unwrap(),
             ConfigValue::Boolean(true),
             "expected true for '{}'",
             val
@@ -247,7 +281,7 @@ fn test_logical_true_variants() {
 fn test_logical_false_variants() {
     for val in &["false", "no", "0", "off", "faux", "non", "FALSE", "NON"] {
         assert_eq!(
-            parse_single_value(val, &DicoType::Logical).unwrap(),
+            parse_single_value_2(&to_token(val), &DicoType::Logical).unwrap(),
             ConfigValue::Boolean(false),
             "expected false for '{}'",
             val
@@ -257,8 +291,9 @@ fn test_logical_false_variants() {
 
 #[test]
 fn test_logical_invalid() {
-    let err = parse_single_value("maybe", &DicoType::Logical).unwrap_err();
-    assert!(err.contains("maybe"));
+    let token = to_token("maybe");
+    let (err_token, _msg) = parse_single_value_2(&token, &DicoType::Logical).unwrap_err();
+    assert_eq!(err_token.token, "maybe");
 }
 
 // Return type sanity - each DicoType maps to the right variant
@@ -267,7 +302,7 @@ fn test_logical_invalid() {
 #[test]
 fn test_string_returns_string_variant() {
     assert!(matches!(
-        parse_single_value("x", &DicoType::String).unwrap(),
+        parse_single_value_2(&to_token("x"), &DicoType::String).unwrap(),
         ConfigValue::String(_)
     ));
 }
@@ -275,7 +310,7 @@ fn test_string_returns_string_variant() {
 #[test]
 fn test_integer_returns_integer_variant() {
     assert!(matches!(
-        parse_single_value("1", &DicoType::Integer).unwrap(),
+        parse_single_value_2(&to_token("1"), &DicoType::Integer).unwrap(),
         ConfigValue::Integer(_)
     ));
 }
@@ -283,7 +318,7 @@ fn test_integer_returns_integer_variant() {
 #[test]
 fn test_real_returns_float_variant() {
     assert!(matches!(
-        parse_single_value("1.0", &DicoType::Real).unwrap(),
+        parse_single_value_2(&to_token("1.0"), &DicoType::Real).unwrap(),
         ConfigValue::Float(_)
     ));
 }
@@ -291,7 +326,7 @@ fn test_real_returns_float_variant() {
 #[test]
 fn test_logical_returns_boolean_variant() {
     assert!(matches!(
-        parse_single_value("true", &DicoType::Logical).unwrap(),
+        parse_single_value_2(&to_token("true"), &DicoType::Logical).unwrap(),
         ConfigValue::Boolean(_)
     ));
 }
@@ -303,7 +338,8 @@ fn test_logical_returns_boolean_variant() {
 #[test]
 fn test_string_collection_unquoted() {
     assert_eq!(
-        parse_collection_values(vec!["alice", "bob", "charlie"], &DicoType::String).unwrap(),
+        parse_collection_values_2(&to_tokens(&["alice", "bob", "charlie"]), &DicoType::String)
+            .unwrap(),
         ConfigValue::StringCollection(vec!["alice".into(), "bob".into(), "charlie".into()])
     );
 }
@@ -311,7 +347,7 @@ fn test_string_collection_unquoted() {
 #[test]
 fn test_string_collection_quoted() {
     assert_eq!(
-        parse_collection_values(vec!["'alice'", "'bob'"], &DicoType::String).unwrap(),
+        parse_collection_values_2(&to_tokens(&["'alice'", "'bob'"]), &DicoType::String).unwrap(),
         ConfigValue::StringCollection(vec!["alice".into(), "bob".into()])
     );
 }
@@ -319,7 +355,7 @@ fn test_string_collection_quoted() {
 #[test]
 fn test_string_collection_mixed_quoted_unquoted() {
     assert_eq!(
-        parse_collection_values(vec!["'alice'", "bob"], &DicoType::String).unwrap(),
+        parse_collection_values_2(&to_tokens(&["'alice'", "bob"]), &DicoType::String).unwrap(),
         ConfigValue::StringCollection(vec!["alice".into(), "bob".into()])
     );
 }
@@ -327,7 +363,7 @@ fn test_string_collection_mixed_quoted_unquoted() {
 #[test]
 fn test_string_collection_with_escaped_quote() {
     assert_eq!(
-        parse_collection_values(vec!["'it''s'", "'l''eau'"], &DicoType::String).unwrap(),
+        parse_collection_values_2(&to_tokens(&["'it''s'", "'l''eau'"]), &DicoType::String).unwrap(),
         ConfigValue::StringCollection(vec!["it's".into(), "l'eau".into()])
     );
 }
@@ -335,7 +371,7 @@ fn test_string_collection_with_escaped_quote() {
 #[test]
 fn test_string_collection_empty_strings() {
     assert_eq!(
-        parse_collection_values(vec!["''", "''"], &DicoType::String).unwrap(),
+        parse_collection_values_2(&to_tokens(&["''", "''"]), &DicoType::String).unwrap(),
         ConfigValue::StringCollection(vec!["".into(), "".into()])
     );
 }
@@ -343,7 +379,7 @@ fn test_string_collection_empty_strings() {
 #[test]
 fn test_string_collection_single_element() {
     assert_eq!(
-        parse_collection_values(vec!["hello"], &DicoType::String).unwrap(),
+        parse_collection_values_2(&to_tokens(&["hello"]), &DicoType::String).unwrap(),
         ConfigValue::StringCollection(vec!["hello".into()])
     );
 }
@@ -351,7 +387,7 @@ fn test_string_collection_single_element() {
 #[test]
 fn test_string_collection_empty_input() {
     assert_eq!(
-        parse_collection_values(vec![], &DicoType::String).unwrap(),
+        parse_collection_values_2(&Vec::new(), &DicoType::String).unwrap(),
         ConfigValue::StringCollection(vec![])
     );
 }
@@ -363,7 +399,7 @@ fn test_string_collection_empty_input() {
 #[test]
 fn test_integer_collection() {
     assert_eq!(
-        parse_collection_values(vec!["1", "2", "3"], &DicoType::Integer).unwrap(),
+        parse_collection_values_2(&to_tokens(&["1", "2", "3"]), &DicoType::Integer).unwrap(),
         ConfigValue::IntegerCollection(vec![1, 2, 3])
     );
 }
@@ -371,7 +407,7 @@ fn test_integer_collection() {
 #[test]
 fn test_integer_collection_negative() {
     assert_eq!(
-        parse_collection_values(vec!["-1", "0", "42"], &DicoType::Integer).unwrap(),
+        parse_collection_values_2(&to_tokens(&["-1", "0", "42"]), &DicoType::Integer).unwrap(),
         ConfigValue::IntegerCollection(vec![-1, 0, 42])
     );
 }
@@ -379,7 +415,7 @@ fn test_integer_collection_negative() {
 #[test]
 fn test_integer_collection_single_element() {
     assert_eq!(
-        parse_collection_values(vec!["99"], &DicoType::Integer).unwrap(),
+        parse_collection_values_2(&to_tokens(&["99"]), &DicoType::Integer).unwrap(),
         ConfigValue::IntegerCollection(vec![99])
     );
 }
@@ -387,36 +423,47 @@ fn test_integer_collection_single_element() {
 #[test]
 fn test_integer_collection_empty_input() {
     assert_eq!(
-        parse_collection_values(vec![], &DicoType::Integer).unwrap(),
+        parse_collection_values_2(&Vec::new(), &DicoType::Integer).unwrap(),
         ConfigValue::IntegerCollection(vec![])
     );
 }
 
 #[test]
 fn test_integer_collection_one_invalid() {
-    let err = parse_collection_values(vec!["1", "oops", "3"], &DicoType::Integer).unwrap_err();
-    assert!(err.contains("oops"));
+    let tokens = to_tokens(&["1", "oops", "3"]);
+
+    let errors = parse_collection_values_2(&tokens, &DicoType::Integer).unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "oops"));
 }
 
 #[test]
 fn test_integer_collection_multiple_invalid() {
-    let err = parse_collection_values(vec!["bad", "1", "wrong"], &DicoType::Integer).unwrap_err();
-    assert!(err.contains("bad"));
-    assert!(err.contains("wrong"));
+    let tokens = to_tokens(&["bad", "1", "wrong"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Integer).unwrap_err();
+
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "bad"));
+    assert!(errors.iter().any(|(ti, _)| ti.token == "wrong"));
 }
 
 #[test]
 fn test_integer_collection_all_invalid() {
-    let err = parse_collection_values(vec!["a", "b", "c"], &DicoType::Integer).unwrap_err();
-    assert!(err.contains("a"));
-    assert!(err.contains("b"));
-    assert!(err.contains("c"));
+    let tokens = to_tokens(&["a", "b", "c"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Integer).unwrap_err();
+    assert_eq!(errors.len(), 3);
+    let errors_tokens: Vec<String> = errors.iter().map(|(ti, _)| ti.token.to_owned()).collect();
+    assert!(errors_tokens.contains(&"a".to_string()));
+    assert!(errors_tokens.contains(&"b".to_string()));
+    assert!(errors_tokens.contains(&"c".to_string()));
 }
 
 #[test]
 fn test_integer_collection_float_is_invalid() {
-    let err = parse_collection_values(vec!["1", "3.14"], &DicoType::Integer).unwrap_err();
-    assert!(err.contains("3.14"));
+    let tokens = to_tokens(&["1", "3.14"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Integer).unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "3.14"));
 }
 
 // =========================================================
@@ -426,7 +473,7 @@ fn test_integer_collection_float_is_invalid() {
 #[test]
 fn test_real_collection() {
     assert_eq!(
-        parse_collection_values(vec!["1.1", "2.2", "3.3"], &DicoType::Real).unwrap(),
+        parse_collection_values_2(&to_tokens(&["1.1", "2.2", "3.3"]), &DicoType::Real).unwrap(),
         ConfigValue::FloatCollection(vec![1.1, 2.2, 3.3])
     );
 }
@@ -434,7 +481,7 @@ fn test_real_collection() {
 #[test]
 fn test_real_collection_whole_numbers() {
     assert_eq!(
-        parse_collection_values(vec!["1", "2", "3"], &DicoType::Real).unwrap(),
+        parse_collection_values_2(&to_tokens(&["1", "2", "3"]), &DicoType::Real).unwrap(),
         ConfigValue::FloatCollection(vec![1.0, 2.0, 3.0])
     );
 }
@@ -442,7 +489,7 @@ fn test_real_collection_whole_numbers() {
 #[test]
 fn test_real_collection_negative() {
     assert_eq!(
-        parse_collection_values(vec!["-1.5", "0.0", "2.5"], &DicoType::Real).unwrap(),
+        parse_collection_values_2(&to_tokens(&["-1.5", "0.0", "2.5"]), &DicoType::Real).unwrap(),
         ConfigValue::FloatCollection(vec![-1.5, 0.0, 2.5])
     );
 }
@@ -450,7 +497,7 @@ fn test_real_collection_negative() {
 #[test]
 fn test_real_collection_scientific_notation() {
     assert_eq!(
-        parse_collection_values(vec!["1.5e3", "2.0e-2"], &DicoType::Real).unwrap(),
+        parse_collection_values_2(&to_tokens(&["1.5e3", "2.0e-2"]), &DicoType::Real).unwrap(),
         ConfigValue::FloatCollection(vec![1500.0, 0.02])
     );
 }
@@ -459,7 +506,7 @@ fn test_real_collection_scientific_notation() {
 #[allow(clippy::approx_constant)]
 fn test_real_collection_single_element() {
     assert_eq!(
-        parse_collection_values(vec!["3.14"], &DicoType::Real).unwrap(),
+        parse_collection_values_2(&to_tokens(&["3.14"]), &DicoType::Real).unwrap(),
         ConfigValue::FloatCollection(vec![3.14])
     );
 }
@@ -467,30 +514,38 @@ fn test_real_collection_single_element() {
 #[test]
 fn test_real_collection_empty_input() {
     assert_eq!(
-        parse_collection_values(vec![], &DicoType::Real).unwrap(),
+        parse_collection_values_2(&Vec::new(), &DicoType::Real).unwrap(),
         ConfigValue::FloatCollection(vec![])
     );
 }
 
 #[test]
 fn test_real_collection_one_invalid() {
-    let err =
-        parse_collection_values(vec!["1.0", "notafloat", "3.0"], &DicoType::Real).unwrap_err();
-    assert!(err.contains("notafloat"));
+    let tokens = to_tokens(&["1.0", "notafloat", "3.0"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Real).unwrap_err();
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "notafloat"));
 }
 
 #[test]
 fn test_real_collection_multiple_invalid() {
-    let err = parse_collection_values(vec!["bad", "1.0", "wrong"], &DicoType::Real).unwrap_err();
-    assert!(err.contains("bad"));
-    assert!(err.contains("wrong"));
+    let tokens = to_tokens(&["bad", "1.0", "wrong"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Real).unwrap_err();
+
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "bad"));
+    assert!(errors.iter().any(|(ti, _)| ti.token == "wrong"));
 }
 
 #[test]
 fn test_real_collection_all_invalid() {
-    let err = parse_collection_values(vec!["a", "b"], &DicoType::Real).unwrap_err();
-    assert!(err.contains("a"));
-    assert!(err.contains("b"));
+    let tokens = to_tokens(&["a", "b"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Real).unwrap_err();
+
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "a"));
+    assert!(errors.iter().any(|(ti, _)| ti.token == "b"));
 }
 
 // =========================================================
@@ -500,7 +555,7 @@ fn test_real_collection_all_invalid() {
 #[test]
 fn test_logical_collection_true_false() {
     assert_eq!(
-        parse_collection_values(vec!["true", "false"], &DicoType::Logical).unwrap(),
+        parse_collection_values_2(&to_tokens(&["true", "false"]), &DicoType::Logical).unwrap(),
         ConfigValue::BooleanCollection(vec![true, false])
     );
 }
@@ -508,7 +563,11 @@ fn test_logical_collection_true_false() {
 #[test]
 fn test_logical_collection_french_variants() {
     assert_eq!(
-        parse_collection_values(vec!["vrai", "faux", "oui", "non"], &DicoType::Logical).unwrap(),
+        parse_collection_values_2(
+            &to_tokens(&["vrai", "faux", "oui", "non"]),
+            &DicoType::Logical
+        )
+        .unwrap(),
         ConfigValue::BooleanCollection(vec![true, false, true, false])
     );
 }
@@ -516,8 +575,11 @@ fn test_logical_collection_french_variants() {
 #[test]
 fn test_logical_collection_mixed_variants() {
     assert_eq!(
-        parse_collection_values(vec!["1", "0", "yes", "no", "on", "off"], &DicoType::Logical)
-            .unwrap(),
+        parse_collection_values_2(
+            &to_tokens(&["1", "0", "yes", "no", "on", "off"]),
+            &DicoType::Logical
+        )
+        .unwrap(),
         ConfigValue::BooleanCollection(vec![true, false, true, false, true, false])
     );
 }
@@ -525,7 +587,11 @@ fn test_logical_collection_mixed_variants() {
 #[test]
 fn test_logical_collection_case_insensitive() {
     assert_eq!(
-        parse_collection_values(vec!["TRUE", "FALSE", "OUI", "NON"], &DicoType::Logical).unwrap(),
+        parse_collection_values_2(
+            &to_tokens(&["TRUE", "FALSE", "OUI", "NON"]),
+            &DicoType::Logical
+        )
+        .unwrap(),
         ConfigValue::BooleanCollection(vec![true, false, true, false])
     );
 }
@@ -533,7 +599,7 @@ fn test_logical_collection_case_insensitive() {
 #[test]
 fn test_logical_collection_single_element() {
     assert_eq!(
-        parse_collection_values(vec!["yes"], &DicoType::Logical).unwrap(),
+        parse_collection_values_2(&to_tokens(&["yes"]), &DicoType::Logical).unwrap(),
         ConfigValue::BooleanCollection(vec![true])
     );
 }
@@ -541,31 +607,38 @@ fn test_logical_collection_single_element() {
 #[test]
 fn test_logical_collection_empty_input() {
     assert_eq!(
-        parse_collection_values(vec![], &DicoType::Logical).unwrap(),
+        parse_collection_values_2(&Vec::new(), &DicoType::Logical).unwrap(),
         ConfigValue::BooleanCollection(vec![])
     );
 }
 
 #[test]
 fn test_logical_collection_one_invalid() {
-    let err =
-        parse_collection_values(vec!["true", "maybe", "false"], &DicoType::Logical).unwrap_err();
-    assert!(err.contains("maybe"));
+    let tokens = to_tokens(&["true", "maybe", "false"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Logical).unwrap_err();
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "maybe"));
 }
 
 #[test]
 fn test_logical_collection_multiple_invalid() {
-    let err =
-        parse_collection_values(vec!["bad", "true", "wrong"], &DicoType::Logical).unwrap_err();
-    assert!(err.contains("bad"));
-    assert!(err.contains("wrong"));
+    let tokens = to_tokens(&["bad", "true", "wrong"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Logical).unwrap_err();
+
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "bad"));
+    assert!(errors.iter().any(|(ti, _)| ti.token == "wrong"));
 }
 
 #[test]
 fn test_logical_collection_all_invalid() {
-    let err = parse_collection_values(vec!["maybe", "perhaps"], &DicoType::Logical).unwrap_err();
-    assert!(err.contains("maybe"));
-    assert!(err.contains("perhaps"));
+    let tokens = to_tokens(&["maybe", "perhaps"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Logical).unwrap_err();
+
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "maybe"));
+    assert!(errors.iter().any(|(ti, _)| ti.token == "perhaps"));
 }
 
 // =========================================================
@@ -573,25 +646,22 @@ fn test_logical_collection_all_invalid() {
 // =========================================================
 
 #[test]
-fn test_error_message_lists_all_invalid_integers() {
-    let err =
-        parse_collection_values(vec!["1", "bad", "wrong", "4"], &DicoType::Integer).unwrap_err();
-    // Both invalid values should appear, joined by ", "
-    assert!(err.contains("bad"));
-    assert!(err.contains("wrong"));
-    assert!(err.contains("are not valid integers"));
+fn test_error_message_lists_invalid_integers() {
+    let tokens = to_tokens(&["1", "bad", "wrong", "4"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Integer).unwrap_err();
+
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "bad"));
+    assert!(errors.iter().any(|(ti, _)| ti.token == "wrong"));
 }
 
 #[test]
 fn test_error_message_lists_all_invalid_floats() {
-    let err = parse_collection_values(vec!["bad", "wrong"], &DicoType::Real).unwrap_err();
-    assert!(err.contains("are not valid floats"));
-}
-
-#[test]
-fn test_error_message_lists_all_invalid_booleans() {
-    let err = parse_collection_values(vec!["maybe", "perhaps"], &DicoType::Logical).unwrap_err();
-    assert!(err.contains("are not valid booleans"));
+    let tokens = to_tokens(&["bad", "wrong"]);
+    let errors = parse_collection_values_2(&tokens, &DicoType::Real).unwrap_err();
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|(ti, _)| ti.token == "bad"));
+    assert!(errors.iter().any(|(ti, _)| ti.token == "wrong"));
 }
 
 // =========================================================
