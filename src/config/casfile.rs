@@ -42,7 +42,6 @@ pub enum ParseError {
     BadChoice {
         key: String,
         value: String,
-        #[fluent(display)]
         reason: dicofile::ChoiceValidationError,
     },
 }

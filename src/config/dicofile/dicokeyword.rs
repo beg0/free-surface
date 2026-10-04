@@ -2,20 +2,33 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use fluent_i18n::ToFluentValue;
+use fluent_message::FluentMessage;
+
 use super::super::configvalue::{ConfigValue, DicoType};
 use super::{normalize_keyword_name, LOCALES};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, FluentMessage)]
 pub enum ChoiceValidationError {
-    #[error("Value {value:?} is not a valid choice")]
     NotFound {
         value: ConfigValue,
+        #[fluent(skip)]
         choices: Vec<ChoiceOptionHelp>,
     },
-    #[error("Something wrong with value {value:?}: {reason}")]
-    InternalError { value: ConfigValue, reason: String },
+    InternalError {
+        value: ConfigValue,
+        reason: String,
+    },
 }
 
+impl ToFluentValue for ChoiceValidationError {
+    fn to_fluent_value(&self) -> fluent_i18n::FluentValue<'static> {
+        let s =
+            crate::i18n::lookup_with_args(&fluent_i18n::get_locale(), self.msg_id(), &self.args());
+
+        fluent_i18n::FluentValue::String(s.into())
+    }
+}
 /// Localized choices options for a [KeywordTextDescription]
 #[derive(Debug, Clone)]
 pub struct ChoiceOptionHelp {
