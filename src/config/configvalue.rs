@@ -61,13 +61,13 @@ pub fn parse_single_value_2<'a>(
             .map(ConfigValue::Boolean)
             .map_err(|err| (value, err)),
         DicoType::Integer => i64::from_str(raw).map(ConfigValue::Integer).map_err(|err| {
-            let msg = format!("'{}' is not a valid integer: {}", raw, err);
+            let msg = t!("config-value-invalid-integer", { "value" => raw.to_owned(), "reason" => err.to_string() });
             (value, msg)
         }),
         DicoType::Real => parse_fortran_float(raw)
             .map(ConfigValue::Float)
             .map_err(|err| {
-                let msg = format!("'{}' is not a valid float: {}", raw, err);
+                let msg = t!("config-value-invalid-real", { "value" => raw.to_owned(), "reason" => err.to_string() });
                 (value, msg)
             }),
         // DicoType::Path => {
@@ -107,7 +107,7 @@ fn parse_collection_values_2<'a>(
                 match i64::from_str(raw) {
                     Ok(val) => converted_values.push(val),
                     Err(err) => {
-                        let msg = format!("'{}' is not a valid integer: {}", raw, err);
+                        let msg = t!("config-value-invalid-integer", { "value" => raw.to_owned(), "reason" => err.to_string()});
                         invalid_values.push((entry, msg));
                     }
                 }
@@ -126,7 +126,7 @@ fn parse_collection_values_2<'a>(
                 match parse_fortran_float(raw) {
                     Ok(val) => converted_values.push(val),
                     Err(err) => {
-                        let msg = format!("'{}' is not a valid float: {}", raw, err);
+                        let msg = t!("config-value-invalid-real", { "value" => raw.to_owned(), "reason" => err.to_string() });
                         invalid_values.push((entry, msg));
                     }
                 }
@@ -158,7 +158,7 @@ fn parse_bool(raw: &str) -> Result<bool, String> {
     match raw.to_lowercase().as_str() {
         "vrai" | "oui" | "true" | ".true." | "yes" | "1" | "on" => Ok(true),
         "faux" | "non" | "false" | ".false." | "no" | "0" | "off" => Ok(false),
-        _ => Err(format!("'{}' is not a valid boolean", raw)),
+        _ => Err(t!("config-value-invalid-bool", { "value" => raw.to_owned()})),
     }
 }
 
@@ -170,12 +170,12 @@ macro_rules! impl_collect {
                 .enumerate()
                 .map(|(i, v)| match v {
                     ConfigValue::$scalar(inner) => Ok(inner),
-                    other => Err(format!("element {i} is not a {}: {:?}", stringify!($scalar), other)),
+                    other => Err(t!("config-value-invalid-type", { "index" => i, "expectedType" => stringify!($scalar), "actualType" => other.to_string()})),
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(ConfigValue::$collection),
             )+
-            other => Err(format!("cannot collect a Vec of {:?}", other)),
+            other => Err(t!("config-value-unimplemented-collection", { "actualType" => other.to_string() })),
         }
     };
 }
@@ -184,14 +184,14 @@ macro_rules! impl_into_scalars {
     ($self:expr, $( $collection:ident => $scalar:ident ),+ $(,)?) => {
         match $self {
             $( ConfigValue::$collection(v) => Ok(v.into_iter().map(ConfigValue::$scalar).collect()), )+
-            other => Err(format!("{:?} is not a collection variant", other)),
+            other => Err(t!("config-value-not-a-collection", { "type" => other.to_string()})),
         }
     };
 }
 
 impl ConfigValue {
     pub fn collect(values: Vec<ConfigValue>) -> Result<ConfigValue, String> {
-        let first = values.first().ok_or("cannot collect an empty Vec")?;
+        let first = values.first().ok_or(t!("config-value-collect-empty-vec"))?;
         impl_collect!(first, values,
             String  => StringCollection,
             Path    => PathCollection,
