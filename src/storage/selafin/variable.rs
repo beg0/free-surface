@@ -63,7 +63,7 @@ impl TimeSerie {
         self.vars.len()
     }
 
-    /// The time axis as a slice-like reference to the underlying SlfArray1D.
+    /// The time axis as a slice-like reference to the underlying [SlfArray1D].
     #[must_use]
     pub fn time(&self) -> &SlfArray1D {
         &self.time
