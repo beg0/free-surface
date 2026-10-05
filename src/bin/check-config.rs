@@ -1,6 +1,7 @@
 use core::fmt;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::fmt::Write as fmt_write;
 use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -186,7 +187,10 @@ fn build_config_tree<'a>(
 }
 
 fn as_bullet_list<T: fmt::Display>(lst: &[T]) -> String {
-    lst.iter().map(|entry| format!("- {entry}\n")).collect()
+    lst.iter().fold(String::new(), |mut output, entry| {
+        let _ = writeln!(output, "- {entry}");
+        output
+    })
 }
 
 fn display_extra_doc(
