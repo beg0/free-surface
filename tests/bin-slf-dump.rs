@@ -187,3 +187,5 @@ fn fails_on_missing_file_args() {
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains("--help"));
 }
+
+// cSpell:ignore npoints nelements nlayers nplanes
