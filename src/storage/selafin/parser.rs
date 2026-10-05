@@ -546,11 +546,11 @@ where
     let mut all_var_defs: Vec<&SlfVariable> = Vec::with_capacity(nb_var);
 
     for var_def in var_defs {
-        all_var_defs.push(var_def)
+        all_var_defs.push(var_def);
     }
 
     for cld_def in cld_defs {
-        all_var_defs.push(cld_def)
+        all_var_defs.push(cld_def);
     }
 
     let rem_size = remaining_file_size(reader)? as usize;
