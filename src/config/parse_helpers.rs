@@ -199,6 +199,7 @@ pub fn write_fortran_float_with_precision(v: f64, precision: usize) -> String {
 /// // Negative zero is treated as positive zero
 /// assert_eq!(write_fortran_float(-0.0),       "-0E+00");
 /// ```
+#[must_use]
 pub fn write_fortran_float(v: f64) -> String {
     // {:E} gives uppercase E and handles sign on the mantissa,
     // but the exponent has no leading zero and no forced sign.

@@ -43,47 +43,57 @@ pub struct Selafin {
 
 impl Selafin {
     /// Title of the study
+    #[must_use]
     pub fn title(&self) -> &String {
         &self.title
     }
 
+    #[must_use]
     pub fn origin(&self) -> (u32, u32) {
         self.origin
     }
 
     /// Return total number of variable in Selafin file
+    #[must_use]
     pub fn nbvar(&self) -> usize {
         self.var.len() + self.cld.len()
     }
 
     /// Return number of linear variables
+    #[must_use]
     pub fn nbvar1(&self) -> usize {
         self.var.len()
     }
 
     /// Return number of quadratic variables
+    #[must_use]
     pub fn nbvar2(&self) -> usize {
         self.cld.len()
     }
 
     /// The ordered list of linear variable definitions.
+    #[must_use]
     pub fn var_defs(&self) -> &[SlfVariable] {
         &self.var
     }
 
     /// The ordered list of quadratic variable definitions.
+    #[must_use]
     pub fn cld_defs(&self) -> &[SlfVariable] {
         &self.cld
     }
 
+    #[must_use]
     pub fn results(&self) -> &TimeSerie {
         &self.results
     }
 
+    #[must_use]
     pub fn geometry(&self) -> &SlfGeometry {
         &self.geo
     }
 
+    #[must_use]
     pub fn datetime(&self) -> Option<NaiveDateTime> {
         self.datetime
     }

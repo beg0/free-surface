@@ -37,6 +37,7 @@ pub struct TimeSerie {
 }
 
 impl TimeSerie {
+    #[must_use]
     pub fn new(time: SlfArray1D, vars: HashMap<String, VariableEvolution>) -> Self {
         let step_count = time.len();
 
@@ -46,19 +47,24 @@ impl TimeSerie {
 
         Self { time, vars }
     }
+
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.time.is_empty() || self.vars.is_empty()
     }
 
+    #[must_use]
     pub fn step_count(&self) -> usize {
         self.time.len()
     }
 
+    #[must_use]
     pub fn var_count(&self) -> usize {
         self.vars.len()
     }
 
     /// The time axis as a slice-like reference to the underlying SlfArray1D.
+    #[must_use]
     pub fn time(&self) -> &SlfArray1D {
         &self.time
     }
@@ -70,6 +76,7 @@ impl TimeSerie {
     }
 
     /// Look up a single variable evolution by name.
+    #[must_use]
     pub fn get_var(&self, name: &str) -> Option<&VariableEvolution> {
         let upper_name = name.to_uppercase();
         self.vars.get(&upper_name)
@@ -351,7 +358,7 @@ mod tests {
         let mut vars = HashMap::new();
         // Variable only has 3 snapshots but time has 5 steps
         vars.insert("DEPTH".to_string(), make_var_f32("DEPTH", "M", 3, 10, 0.0));
-        TimeSerie::new(time, vars);
+        let _ = TimeSerie::new(time, vars);
     }
 
     #[test]
@@ -361,7 +368,7 @@ mod tests {
         let mut vars = HashMap::new();
         // Variable has 5 snapshots but time has only 3 steps
         vars.insert("DEPTH".to_string(), make_var_f32("DEPTH", "M", 5, 10, 0.0));
-        TimeSerie::new(time, vars);
+        let _ = TimeSerie::new(time, vars);
     }
 
     #[test]
@@ -379,6 +386,6 @@ mod tests {
             "VELOCITY V".to_string(),
             make_var_f32("VELOCITY V", "M/S", 2, 6, 2.0),
         );
-        TimeSerie::new(time, vars);
+        let _ = TimeSerie::new(time, vars);
     }
 }
