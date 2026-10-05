@@ -157,7 +157,7 @@ fn build_config_tree<'a>(
 
         // Walk (and create) intermediate SubSection nodes
         let mut current = &mut tree;
-        for section_name in keyword.default_text_desc().classification.iter() {
+        for section_name in &keyword.default_text_desc().classification {
             // Skip empty name
             if section_name.is_empty() {
                 continue;
