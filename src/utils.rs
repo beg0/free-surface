@@ -1,2 +1,2 @@
-/// Utilities functions
+//! # Utilities functions
 pub mod fs;

@@ -50,7 +50,7 @@ pub fn create_config_viewer<W: RawStream + AsLockedWrite + 'static>(
     out: W,
     options: ConfigViewerOptions,
 ) -> Box<dyn ConfigViewer> {
-    // Dispatch to the right rendrer
+    // Dispatch to the right renderer
     match options {
         ConfigViewerOptions::Damocles => Box::new(DamoclesConfigViewer::new(out)),
         ConfigViewerOptions::Human { color } => {

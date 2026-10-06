@@ -7,6 +7,7 @@ isize
 flate
 rfind
 rustc
+rsplit
 serde
 ureq
 thiserror

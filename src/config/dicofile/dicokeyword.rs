@@ -26,9 +26,9 @@ pub struct ChoiceOptionHelp {
 impl fmt::Display for ChoiceOptionHelp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.help.is_empty() {
-            writeln!(f, "{}", self.option)
+            write!(f, "{}", self.option)
         } else {
-            writeln!(f, "{}: {}", self.option, self.help)
+            write!(f, "{}: {}", self.option, self.help)
         }
     }
 }
@@ -42,7 +42,6 @@ pub struct KeywordTextDescription {
 
     pub classification: Vec<String>, // Classification, per levels
 
-    #[allow(dead_code)]
     pub help: String, // Keyword description
 }
 

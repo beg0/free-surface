@@ -1,6 +1,7 @@
 use core::fmt;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::fmt::Write as fmt_write;
 use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -147,7 +148,7 @@ fn build_config_tree<'a>(
 ) -> SectionEntry<'a> {
     // Rebuild the hierarchy of the dictionary
     let mut tree = SectionEntry::SubSection {
-        name: String::from(""),
+        name: String::new(),
         content: BTreeMap::new(),
     };
 
@@ -156,7 +157,7 @@ fn build_config_tree<'a>(
 
         // Walk (and create) intermediate SubSection nodes
         let mut current = &mut tree;
-        for section_name in keyword.default_text_desc().classification.iter() {
+        for section_name in &keyword.default_text_desc().classification {
             // Skip empty name
             if section_name.is_empty() {
                 continue;
@@ -186,7 +187,10 @@ fn build_config_tree<'a>(
 }
 
 fn as_bullet_list<T: fmt::Display>(lst: &[T]) -> String {
-    lst.iter().map(|entry| format!("- {}\n", entry)).collect()
+    lst.iter().fold(String::new(), |mut output, entry| {
+        let _ = writeln!(output, "- {entry}");
+        output
+    })
 }
 
 fn display_extra_doc(
@@ -199,6 +203,9 @@ fn display_extra_doc(
         let text = match doc_req {
             DocInfo::Help => text_desc.help.clone(),
             DocInfo::ChoiceOptions => {
+                if text_desc.choices_help.is_empty() {
+                    continue;
+                }
                 format!(
                     "Possible values\n{}",
                     as_bullet_list(&text_desc.choices_help)
@@ -226,8 +233,8 @@ fn display_extra_doc(
     Ok(())
 }
 
-fn display_config<'a>(
-    tree: SectionEntry<'a>,
+fn display_config(
+    tree: SectionEntry<'_>,
     render: &mut dyn ConfigViewer,
     args: &Args,
 ) -> Result<(), Errors> {
@@ -305,7 +312,7 @@ fn run(args: &Args) -> Result<usize, Errors> {
     match parsing_result {
         Ok(config) => {
             if args.dump || args.full_dump {
-                dump_config(&config, &dico, args)?
+                dump_config(&config, &dico, args)?;
             }
             Ok(0)
         }
@@ -340,6 +347,7 @@ fn main() -> ExitCode {
     match run(&args) {
         Ok(error_cnt) => {
             let clamped = std::cmp::min(error_cnt, 125);
+            #[allow(clippy::cast_possible_truncation)]
             ExitCode::from(clamped as u8)
         }
         Err(errors) => {

@@ -444,8 +444,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
             pos: reader.stream_position()?,
             message: format!(
                 "Inconsistent number of points.
-                Header says {} points, x record says {} points, y records says {}",
-                npoin3, x_len, y_len,
+                Header says {npoin3} points, x record says {x_len} points, y records says {y_len}"
             ),
         });
     }
@@ -547,11 +546,11 @@ where
     let mut all_var_defs: Vec<&SlfVariable> = Vec::with_capacity(nb_var);
 
     for var_def in var_defs {
-        all_var_defs.push(var_def)
+        all_var_defs.push(var_def);
     }
 
     for cld_def in cld_defs {
-        all_var_defs.push(cld_def)
+        all_var_defs.push(cld_def);
     }
 
     let rem_size = remaining_file_size(reader)? as usize;
@@ -576,7 +575,7 @@ where
         if t.is_empty() {
             return Err(binrw::Error::AssertFail {
                 pos: reader.stream_position()?,
-                message: format!("Time entry for history #{} is empty", time_idx),
+                message: format!("Time entry for history #{time_idx} is empty"),
             });
         }
 

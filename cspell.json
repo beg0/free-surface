@@ -8,5 +8,12 @@
     "dictionaries": ["telemac", "free-surface"],
     "languageSettings": [
         { "languageId": "Rust", "dictionaries": ["rust"] }
+    ],
+    "overrides": [
+        // Don't check spelling on the dico themself!
+        {
+            "filename": "tools/dict/*.txt",
+            "enabled": false
+        }
     ]
 }

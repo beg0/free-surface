@@ -47,6 +47,7 @@ impl Default for SlfGeometry {
 
 impl SlfGeometry {
     /// Constructor
+    #[must_use]
     pub fn new(
         points: SlfArray2D,
         ipob3: Vec<u32>,
@@ -77,6 +78,7 @@ impl SlfGeometry {
     }
 
     /// Tell if the Selafin is for 2D of 3D computation
+    #[must_use]
     pub fn dimension(&self) -> u32 {
         if self.nplan > 1 {
             3
@@ -87,6 +89,7 @@ impl SlfGeometry {
 
     /// Number of plane (layer) in  the Selafin file
     /// Always 1 for 2D files, always >= 2 for 3D files
+    #[must_use]
     pub fn planes_cnt(&self) -> u32 {
         self.nplan
     }
@@ -96,6 +99,7 @@ impl SlfGeometry {
     /// For 2D selafin, this is the same as [self.points_count]
     /// For 3D Selafin, this is the total number of points ([self.points_count]) divided by the number of
     /// layer as there is the same number of points for each layer.
+    #[must_use]
     pub fn points_per_layer(&self) -> usize {
         if self.nplan > 1 {
             // The number of points is the same for every layer (regular mesh)
@@ -106,21 +110,25 @@ impl SlfGeometry {
     }
 
     /// Alias for [self.points_per_layer] for Telemac compatibility
+    #[must_use]
     pub fn npoin2(&self) -> usize {
         self.points_per_layer()
     }
 
     /// Total number of points in the mesh
+    #[must_use]
     pub fn points_count(&self) -> usize {
         self.points.len()
     }
 
     /// Alias for [self.points_count] for Telemac compatibility
+    #[must_use]
     pub fn npoin3(&self) -> usize {
         self.points.len()
     }
 
     /// The coordinate arrays for all mesh nodes.
+    #[must_use]
     pub fn points_raw(&self) -> &SlfArray2D {
         &self.points
     }
@@ -130,6 +138,7 @@ impl SlfGeometry {
     /// For 2D selafin, this is the same as [self.elements_count]
     /// For 3D Selafin, this is the total number of elements ([self.elements_count]) divided by the number of
     /// layer as there is the same number of element for each layer.
+    #[must_use]
     pub fn elements_per_layer(&self) -> usize {
         let nelem3 = self.elements_count();
         if self.nplan > 1 {
@@ -141,11 +150,13 @@ impl SlfGeometry {
     }
 
     /// Alias for [self.elements_per_layer] for Telemac compatibility
+    #[must_use]
     pub fn nelem2(&self) -> usize {
         self.elements_per_layer()
     }
 
     /// Total number of element (triangular or prism) or in the mesh
+    #[must_use]
     pub fn elements_count(&self) -> usize {
         self.mesh.len() / self.npd3
     }
@@ -155,6 +166,7 @@ impl SlfGeometry {
     /// In 2D, this is the same as the number of points per layer
     /// In 3D, it's half the number of point per element as there is no need
     /// to connect to upper layer
+    #[must_use]
     pub fn point_per_layer_element(&self) -> usize {
         if self.nplan > 1 {
             self.npd3 / 2 // triangular prism: 6 nodes → 3 in 2-D
@@ -164,10 +176,12 @@ impl SlfGeometry {
     }
 
     /// Alias for [self.point_per_layer_element] for Telemac compatibility
+    #[must_use]
     pub fn npd2(&self) -> usize {
         self.point_per_layer_element()
     }
 
+    #[must_use]
     pub fn point_per_element(&self) -> usize {
         self.npd3
     }
@@ -176,6 +190,7 @@ impl SlfGeometry {
     ///
     /// Layer 0 is the bottom layer, layer `self.planes_cnt() - 1` is the upper layer
     /// For 2D selafin, only layer 0 is valid
+    #[must_use]
     pub fn ikle2(&self, layer: usize) -> Option<&[u32]> {
         let points_per_layer = self.elements_per_layer() * self.point_per_layer_element();
         if layer >= self.nplan as usize {
@@ -186,6 +201,7 @@ impl SlfGeometry {
     }
 
     /// Return all elements of the selafin
+    #[must_use]
     pub fn ikle3(&self) -> &[u32] {
         &self.mesh
     }
@@ -194,6 +210,7 @@ impl SlfGeometry {
     ///
     /// Layer 0 is the bottom layer, layer `self.planes_cnt() - 1` is the upper layer
     /// For 2D selafin, only layer 0 is valid
+    #[must_use]
     pub fn ipob2(&self, layer: usize) -> Option<&[u32]> {
         let points_per_layer = self.elements_per_layer() * self.point_per_layer_element();
         if layer >= self.nplan as usize {
@@ -204,6 +221,7 @@ impl SlfGeometry {
     }
 
     /// Return all elements of the selafin
+    #[must_use]
     pub fn ipob3(&self) -> &[u32] {
         &self.ipob3
     }

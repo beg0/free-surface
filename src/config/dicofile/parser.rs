@@ -612,7 +612,7 @@ fn parse_controle(
         (Err(min_err), _) => {
             diag.error(
                 DicoParseError::InvalidValue {
-                    field: "CONTROL".to_owned(),
+                    field: "CONTROLE".to_owned(),
                     reason: format!("Invalid min value '{}': {}", min.token, min_err),
                 }
                 .to_string(),
@@ -623,7 +623,7 @@ fn parse_controle(
         (_, Err(max_err)) => {
             diag.error(
                 DicoParseError::InvalidValue {
-                    field: "CONTROL".to_owned(),
+                    field: "CONTROLE".to_owned(),
                     reason: format!("Invalid max value '{}': {}", max.token, max_err),
                 }
                 .to_string(),
@@ -685,7 +685,7 @@ fn parse_choice_help(option_and_help: TokenInfo) -> (TokenInfo, String) {
             end_pos: new_end_pos,
         };
         //TODO: often this text is double-quoted. Need to unquote it.
-        let help_text = text[eq_pos..].trim().to_owned();
+        let help_text = text[eq_pos + 1..].trim().to_owned();
 
         (option_token, help_text)
     } else {
@@ -709,6 +709,53 @@ where
         })
     } else {
         Ok(T::Item::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_choice_help_single_option() {
+        let option_and_help = TokenInfo {
+            token: "42".to_owned(),
+            start_pos: TextLoc::default(),
+            end_pos: TextLoc::default(),
+        };
+
+        let (ti, help) = parse_choice_help(option_and_help);
+
+        assert_eq!(ti.token.as_str(), "42");
+        assert!(help.is_empty());
+    }
+
+    #[test]
+    fn parse_choice_help_equal_sign() {
+        let option_and_help = TokenInfo {
+            token: "  42 = \"answer to universe, life and everything\"".to_owned(),
+            start_pos: TextLoc::default(),
+            end_pos: TextLoc::default(),
+        };
+
+        let (ti, help) = parse_choice_help(option_and_help);
+
+        assert_eq!(ti.token.as_str(), "42");
+        assert_eq!(help, "\"answer to universe, life and everything\"");
+    }
+
+    #[test]
+    fn parse_choice_help_semicolumn_sign() {
+        let option_and_help = TokenInfo {
+            token: "  42 : \"answer to universe, life and everything\"".to_owned(),
+            start_pos: TextLoc::default(),
+            end_pos: TextLoc::default(),
+        };
+
+        let (ti, help) = parse_choice_help(option_and_help);
+
+        assert_eq!(ti.token.as_str(), "42");
+        assert_eq!(help, "\"answer to universe, life and everything\"");
     }
 }
 

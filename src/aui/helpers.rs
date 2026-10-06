@@ -10,7 +10,8 @@ use clap::ColorChoice;
 /// not a TTY or when NO_COLOR / --no-color is set.
 ///
 /// # Example
-/// ```norun
+///
+/// ```ignore
 /// use clap::ColorChoice;
 /// use free_surface::aui::helpers::color_choice_to_stream;
 ///

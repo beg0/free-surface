@@ -17,7 +17,7 @@ pub trait TextDiagnosticsRenderer {
     fn render(&mut self, diagnostics: &TextParserDiagnostics) -> Result<(), std::io::Error>;
 }
 
-/// Options to create a [TextDiagnosticsRenderer] via [text_diagnostic_renderer]
+/// Options to create a [TextDiagnosticsRenderer] via [create_text_diagnostic_renderer]
 pub enum TextDiagnosticsRendererOptions {
     Terminal { color: ColorChoice },
     Json { pretty: bool },
