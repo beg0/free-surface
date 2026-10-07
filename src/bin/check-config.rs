@@ -3,11 +3,13 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Write as fmt_write;
 use std::io;
+use std::io::Write as io_write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
 
 use clap::Parser;
+use free_surface::{set_locale, t};
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
 use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
@@ -98,7 +100,7 @@ impl FromStr for DocInfo {
             "type" => Ok(DocInfo::Type),
             "nargs" => Ok(DocInfo::Nargs),
             "boundaries" => Ok(DocInfo::Boundaries),
-            other => Err(format!("unknown extra-info '{other}'")),
+            other => Err(t!("check-config-unknown-extra-info", { "other" => other.to_owned() })),
         }
     }
 }
@@ -207,23 +209,26 @@ fn display_extra_doc(
                     continue;
                 }
                 format!(
-                    "Possible values\n{}",
+                    "{}\n{}",
+                    t!("check-config-extra-doc-choice-options"),
                     as_bullet_list(&text_desc.choices_help)
                 )
             }
             DocInfo::DefaultValue => match &text_desc.default_val {
-                Some(value) => format!("Default value: {}", value),
+                Some(value) => t!("check-config-extra-doc-default-value", { "value" => *value }),
                 None => continue,
             },
             //DocInfo::AlternateKeywordName => {},
             DocInfo::Type => {
-                format!("Type: {:?}", keyword.type_)
+                t!("check-config-extra-doc-type", { "type" => keyword.type_ })
             }
             DocInfo::Nargs => {
-                format!("Size: {}", keyword.nargs)
+                t!("check-config-extra-doc-nargs", { "nargs" => keyword.nargs })
             }
             DocInfo::Boundaries => match keyword.boundaries {
-                Some((min, max)) => format!("Boundaries: [{} ; {}]", min, max),
+                Some((min, max)) => {
+                    t!("check-config-extra-doc-boundaries", { "min" => min, "max" => max })
+                }
                 None => continue,
             },
         };
@@ -342,6 +347,12 @@ fn print_diagnostics(diagnostics: &TextParserDiagnostics, args: &Args) -> Result
 // ---------------------------------------------------------------------------
 
 fn main() -> ExitCode {
+    // Use system locale
+    if let Err(error) = set_locale(None) {
+        eprintln!("Can't set locale: {error}");
+        return ExitCode::FAILURE;
+    }
+
     let args = Args::parse();
 
     match run(&args) {
@@ -352,7 +363,9 @@ fn main() -> ExitCode {
         }
         Err(errors) => {
             for e in errors {
-                eprintln!("Error: {e}");
+                let _ = std::io::stderr()
+                    .write(t!("check-config-main-error", { "error" => e.to_string()}).as_bytes());
+                eprintln!();
             }
 
             ExitCode::from(126)

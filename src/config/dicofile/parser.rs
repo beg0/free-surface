@@ -16,68 +16,72 @@ use crate::aui::diagnostic::collector::TextParserDiagnostics;
 use super::dicokeyword::{ChoiceOptionHelp, DicoKeyword, GuiControl, KeywordTextDescription};
 use super::{normalize_keyword_name, Dico, DicoInner, LOCALES};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, fluent_message::FluentMessage)]
 pub enum DicoParseError {
-    #[error("Missing required field '{field}' in keyword block")]
-    MissingField { field: &'static str },
-    #[error("Unknown field '{field}'")]
-    UnknownField { field: String },
-    #[error("Invalid value for field '{field}': {reason}")]
-    InvalidValue { field: String, reason: String },
-    #[error("Too much values for field '{field}': got {got_count} but expected {expected_count}")]
-    TooMuchValues {
+    ReadFileFailure {
+        #[fluent(display)]
+        error: std::io::Error,
+    },
+    MissingField {
+        field: &'static str,
+    },
+    UnknownField {
+        field: String,
+    },
+    InvalidValue {
+        field: String,
+        reason: String,
+    },
+    TooManyValues {
         field: String,
         got_count: usize,
         expected_count: usize,
     },
-    #[error(
-        "Not enough values for field '{field}': got {got_count} but expected at least {expected_count}"
-    )]
     NotEnoughValues {
         field: String,
         got_count: usize,
         expected_count: usize,
     },
-    #[error("Invalid default value '{value}' in field {field}: {reason}")]
     InvalidDefaultValue {
         field: String,
         value: String,
         reason: String,
     },
-    // #[error("Duplicated field {field} in block starting at {block_pos}")]
     // DuplicatedKey {
     //     field: String,
     //     block_pos: TextLoc,
     // },
 
-    // #[error("Inconsistent default values")]
     // InconsistentDefaultValues {
     //     field: String,
     //     reason: String,
     // },
-    #[error("Invalid value for choice '{option}' in field {field}: {reason}")]
     InvalidChoice {
         field: String,
         option: String,
         reason: String,
     },
-    // #[error("Inconsistent options between choices for {lang1} and {lang2}. Got {choices1} and {choices2}")]
     // InconsistentChoiceOption {
     //     lang1: String,
     //     lang2: String,
     //     choices1: Vec<ConfigValue>,
     //     choices2: Vec<ConfigValue>,
     // },
-    #[error("Inconsistent options between choices for different languages. Got {cnt1} and {cnt2} options.")]
-    InconsistentChoiceOption { cnt1: usize, cnt2: usize },
+    InconsistentChoiceOption {
+        cnt1: usize,
+        cnt2: usize,
+    },
 }
 
 /// Parse a Telemac dico file
 pub fn parse_file<P: AsRef<Path>>(filename: P) -> Result<Dico, TextParserDiagnostics> {
     let file_pos = TextLoc::from((&filename, 0));
 
-    let content = std::fs::read_to_string(&filename).map_err(|err| {
-        TextParserDiagnostics::from_single_error(err.to_string(), file_pos.clone())
+    let content = std::fs::read_to_string(&filename).map_err(|error| {
+        TextParserDiagnostics::from_single_error(
+            DicoParseError::ReadFileFailure { error },
+            file_pos.clone(),
+        )
     })?;
 
     parse_dico_with_textloc(&content, file_pos)
@@ -132,12 +136,11 @@ fn parse_block(
                 block_pos.clone()
             };
             diag.error(
-                DicoParseError::TooMuchValues {
+                DicoParseError::TooManyValues {
                     field: key.to_string(),
                     expected_count,
                     got_count: parse_infos.len(),
-                }
-                .to_string(),
+                },
                 pos,
             );
 
@@ -162,8 +165,7 @@ fn parse_block(
                     field: key.to_string(),
                     expected_count: 1,
                     got_count: parse_infos.len(),
-                }
-                .to_string(),
+                },
                 pos,
             );
 
@@ -186,7 +188,7 @@ fn parse_block(
             Some(token_info) => token_info.token.clone(),
             None => {
                 diag.error(
-                    DicoParseError::MissingField { field: key }.to_string(),
+                    DicoParseError::MissingField { field: key },
                     block_pos.clone(),
                 );
                 String::new()
@@ -205,8 +207,7 @@ fn parse_block(
                     DicoParseError::InvalidValue {
                         field: "TYPE".into(),
                         reason: format!("unknown type '{}'", other),
-                    }
-                    .to_string(),
+                    },
                     desc.start_pos.clone(),
                 );
                 None
@@ -247,8 +248,7 @@ fn parse_block(
                                 field: String::from(names.2),
                                 value: entry.token.clone(),
                                 reason,
-                            }
-                            .to_string(),
+                            },
                             entry.start_pos.clone(),
                         );
                     }
@@ -285,11 +285,10 @@ fn parse_block(
                 Err((entry, reason)) => {
                     diag.error(
                         DicoParseError::InvalidChoice {
-                            field: String::from(names.2),
+                            field: String::from(names.3),
                             option: entry.token.clone(),
                             reason,
-                        }
-                        .to_string(),
+                        },
                         entry.start_pos.clone(),
                     );
                 }
@@ -323,8 +322,7 @@ fn parse_block(
                     DicoParseError::InvalidValue {
                         field: "APPARENCE".into(),
                         reason: format!("unknown apparence '{}'", other),
-                    }
-                    .to_string(),
+                    },
                     token_info.start_pos.clone(),
                 );
                 None
@@ -359,7 +357,7 @@ fn parse_block(
         Ok(_) => {}
         Err((cnt1, cnt2)) => {
             diag.error(
-                DicoParseError::InconsistentChoiceOption { cnt1, cnt2 }.to_string(),
+                DicoParseError::InconsistentChoiceOption { cnt1, cnt2 },
                 block_pos.clone(),
             );
         }
@@ -451,10 +449,8 @@ impl DamoclesParser for DicoFieldParser {
                 dbg!(&self.fields);
             }
             "STO" => {
-                self.diag.error(
-                    DamoclesError::StopCommand { cmd: cmd.token }.to_string(),
-                    cmd.start_pos,
-                );
+                self.diag
+                    .error(DamoclesError::StopCommand { cmd: cmd.token }, cmd.start_pos);
                 return None;
             }
             "FIN" => {
@@ -465,7 +461,7 @@ impl DamoclesParser for DicoFieldParser {
             }
             _ => {
                 self.diag.error(
-                    DamoclesError::UnknownCommand { cmd: cmd.token }.to_string(),
+                    DamoclesError::UnknownCommand { cmd: cmd.token },
                     cmd.start_pos,
                 );
                 return None;
@@ -526,8 +522,7 @@ impl DamoclesParser for DicoFieldParser {
             self.diag.error(
                 DicoParseError::UnknownField {
                     field: kpi.key.token.to_string(),
-                }
-                .to_string(),
+                },
                 kpi.key.start_pos.clone(),
             );
         }
@@ -583,15 +578,14 @@ where
                 DicoParseError::InvalidValue {
                     field: name.into(),
                     reason: format!("'{}' is not a valid integer: {:#}", desc.token, e),
-                }
-                .to_string(),
+                },
                 desc.start_pos.clone(),
             );
             T::default()
         }),
         None => {
             diag.error(
-                DicoParseError::MissingField { field: name }.to_string(),
+                DicoParseError::MissingField { field: name },
                 block_pos.clone(),
             );
             T::default()
@@ -614,8 +608,7 @@ fn parse_controle(
                 DicoParseError::InvalidValue {
                     field: "CONTROLE".to_owned(),
                     reason: format!("Invalid min value '{}': {}", min.token, min_err),
-                }
-                .to_string(),
+                },
                 min.start_pos.clone(),
             );
             None
@@ -625,8 +618,7 @@ fn parse_controle(
                 DicoParseError::InvalidValue {
                     field: "CONTROLE".to_owned(),
                     reason: format!("Invalid max value '{}': {}", max.token, max_err),
-                }
-                .to_string(),
+                },
                 max.start_pos.clone(),
             );
             None

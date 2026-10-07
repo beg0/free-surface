@@ -72,26 +72,41 @@ mod tests {
     use crate::config::textloc::TextLoc;
     use serde_json::json;
 
-    const ERROR_MSG: &str = "you made a mistake!";
     const FILE_WITH_ERROR: &str = "corrupted_file.txt";
     const ERROR_LINE: usize = 666;
 
-    const WARNING_MSG: &str = "Be careful!";
     const FILE_WITH_WARNING: &str = "strange_file.txt";
     const WARNING_LINE: usize = 42;
 
-    const HINT_MSG: &str = "Try that!";
     const FILE_WITH_HINT: &str = "no_clue_file.txt";
     const HINT_LINE: usize = 777;
 
+    #[derive(fluent_message::FluentMessage)]
+    #[fluent(id = "test-error-message")]
+    struct TestErrorMessage();
+
+    #[derive(fluent_message::FluentMessage)]
+    #[fluent(id = "test-warning-message")]
+    struct TestWarningMessage();
+
+    #[derive(fluent_message::FluentMessage)]
+    #[fluent(id = "test-hint-message")]
+    struct TestHintMessage();
+
     fn sample_diagnostics() -> TextParserDiagnostics {
         let mut diagnostics = TextParserDiagnostics::default();
-        diagnostics.error(ERROR_MSG, TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)));
+        diagnostics.error(
+            TestErrorMessage(),
+            TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)),
+        );
         diagnostics.warning(
-            WARNING_MSG,
+            TestWarningMessage(),
             TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)),
         );
-        diagnostics.hint(HINT_MSG, TextLoc::from((FILE_WITH_HINT, HINT_LINE)));
+        diagnostics.hint(
+            TestHintMessage(),
+            TextLoc::from((FILE_WITH_HINT, HINT_LINE)),
+        );
         diagnostics
     }
 
@@ -104,7 +119,7 @@ mod tests {
 
         json!([
             {
-                "message": ERROR_MSG,
+                "message": "Unknown localization key: \"test-error-message\"",
                 "kind": "error",
                 "locations": [
                     {
@@ -115,7 +130,7 @@ mod tests {
                 ]
             },
             {
-                "message": WARNING_MSG,
+                "message": "Unknown localization key: \"test-warning-message\"",
                 "kind": "warning",
                 "locations": [
                     {
@@ -126,7 +141,7 @@ mod tests {
                 ]
             },
             {
-                "message": HINT_MSG,
+                "message": "Unknown localization key: \"test-hint-message\"",
                 "kind": "hint",
                 "locations": [
                     {

@@ -9,5 +9,6 @@ rfind
 rustc
 rsplit
 serde
+unic
 ureq
 thiserror

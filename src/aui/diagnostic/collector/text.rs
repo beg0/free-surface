@@ -1,5 +1,8 @@
 //! # Collect text parsing errors
 //!
+
+use fluent_message::FluentMessage;
+
 use super::Severity;
 use crate::config::textloc::TextLoc;
 
@@ -55,11 +58,11 @@ impl TextParserDiagnostics {
     /// - `message`: description of the error, accepted as anything
     ///   convertible into a `String` (e.g. `&str` or `String`).
     /// - `loc`: location in the document where the error was found.
-    pub fn error(&mut self, message: impl Into<String>, loc: TextLoc) {
+    pub fn error(&mut self, message: impl FluentMessage, loc: TextLoc) {
         self.error_count += 1;
         self.items.push(TextParserDiagnostic {
             severity: Severity::Error,
-            message: message.into(),
+            message: fluent_message_to_string(message),
             loc,
         });
     }
@@ -79,11 +82,11 @@ impl TextParserDiagnostics {
     /// - `message`: description of the warning, accepted as anything
     ///   convertible into a `String`.
     /// - `loc`: location in the document where the warning was found.
-    pub fn warning(&mut self, message: impl Into<String>, loc: TextLoc) {
+    pub fn warning(&mut self, message: impl FluentMessage, loc: TextLoc) {
         self.warn_count += 1;
         self.items.push(TextParserDiagnostic {
             severity: Severity::Warning,
-            message: message.into(),
+            message: fluent_message_to_string(message),
             loc,
         });
     }
@@ -98,10 +101,10 @@ impl TextParserDiagnostics {
     /// - `message`: description of the hint, accepted as anything
     ///   convertible into a `String`.
     /// - `loc`: location in the document the hint relates to.
-    pub fn hint(&mut self, message: impl Into<String>, loc: TextLoc) {
+    pub fn hint(&mut self, message: impl FluentMessage, loc: TextLoc) {
         self.items.push(TextParserDiagnostic {
             severity: Severity::Hint,
-            message: message.into(),
+            message: fluent_message_to_string(message),
             loc,
         });
     }
@@ -116,10 +119,15 @@ impl TextParserDiagnostics {
     /// ```
     /// use free_surface::config::textloc::TextLoc;
     /// use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
+    /// use fluent_message::FluentMessage;
+    ///
+    /// #[derive(FluentMessage)]
+    /// struct WarningMessage {
+    /// }
     ///
     /// let mut diag = TextParserDiagnostics::default();
     /// let loc = TextLoc::from(("a_file.txt", 42));
-    /// diag.warning("careful", loc);
+    /// diag.warning(WarningMessage {}, loc);
     /// assert!(!diag.has_errors(false));
     /// assert!(diag.has_errors(true));
     /// ```
@@ -153,16 +161,31 @@ impl TextParserDiagnostics {
     /// Equivalent to creating a default collector and calling
     /// [`error`](Self::error) on it once; convenient for building an
     /// early-return diagnostics value from a single failure.
-    pub fn from_single_error(message: impl Into<String>, loc: TextLoc) -> Self {
+    pub fn from_single_error(message: impl FluentMessage, loc: TextLoc) -> Self {
         let mut diag = Self::default();
         diag.error(message, loc);
         diag
     }
 }
 
+fn fluent_message_to_string(message: impl FluentMessage) -> String {
+    crate::i18n::lookup_with_args(
+        &fluent_i18n::get_locale(),
+        message.msg_id(),
+        &message.args(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[derive(fluent_message::FluentMessage)]
+    #[fluent(prefix = "test-message")]
+    enum TestMessage {
+        Error { arg: &'static str },
+        Warning { arg: &'static str },
+        Hint { arg: &'static str },
+    }
 
     fn loc1() -> TextLoc {
         TextLoc::from(("test.txt", 1))
@@ -188,11 +211,17 @@ mod tests {
     #[test]
     fn error_is_recorded() {
         let mut diag = TextParserDiagnostics::default();
-        diag.error("something bad", loc1());
+
+        diag.error(
+            TestMessage::Error {
+                arg: "something bad",
+            },
+            loc1(),
+        );
 
         assert_eq!(diag.all().len(), 1);
         assert_eq!(diag.all()[0].severity, Severity::Error);
-        assert_eq!(diag.all()[0].message, "something bad");
+        assert!(diag.all()[0].message.contains("test-message-error"));
         assert_eq!(diag.all()[0].loc, loc1());
 
         assert_eq!(diag.error_count(false), 1);
@@ -204,11 +233,11 @@ mod tests {
     #[test]
     fn warning_is_recorded_but_not_counted_as_error_by_default() {
         let mut diag = TextParserDiagnostics::default();
-        diag.warning("careful", loc2());
+        diag.warning(TestMessage::Warning { arg: "careful" }, loc2());
 
         assert_eq!(diag.all().len(), 1);
         assert_eq!(diag.all()[0].severity, Severity::Warning);
-        assert_eq!(diag.all()[0].message, "careful");
+        assert!(diag.all()[0].message.contains("test-message-warning"));
         assert_eq!(diag.all()[0].loc, loc2());
 
         // Not counted as an error unless warn_as_error is set
@@ -223,11 +252,11 @@ mod tests {
     #[test]
     fn hint_is_recorded_but_never_counted_as_error() {
         let mut diag = TextParserDiagnostics::default();
-        diag.hint("fyi", loc1());
+        diag.hint(TestMessage::Hint { arg: "fyi" }, loc1());
 
         assert_eq!(diag.all().len(), 1);
         assert_eq!(diag.all()[0].severity, Severity::Hint);
-        assert_eq!(diag.all()[0].message, "fyi");
+        assert!(diag.all()[0].message.contains("test-message-hint"));
         assert_eq!(diag.all()[0].loc, loc1());
 
         assert_eq!(diag.error_count(false), 0);
@@ -239,15 +268,25 @@ mod tests {
     #[test]
     fn mixed_diagnostics_counts_and_preserves_order() {
         let mut diag = TextParserDiagnostics::default();
-        diag.error("e1", loc1());
-        diag.warning("w1", loc2());
-        diag.hint("h1", loc2());
-        diag.error("e2", loc3());
-        diag.warning("w2", loc3());
+        diag.error(TestMessage::Error { arg: "e1" }, loc1());
+        diag.warning(TestMessage::Warning { arg: "w1" }, loc2());
+        diag.hint(TestMessage::Hint { arg: "h1" }, loc2());
+        diag.error(TestMessage::Error { arg: "e2" }, loc3());
+        diag.warning(TestMessage::Warning { arg: "w2" }, loc3());
 
         // Order is preserved as inserted
         let messages: Vec<&str> = diag.all().iter().map(|d| d.message.as_str()).collect();
-        assert_eq!(messages, vec!["e1", "w1", "h1", "e2", "w2"]);
+        let expected_messages = vec![
+            "test-message-error",
+            "test-message-warning",
+            "test-message-hint",
+            "test-message-error",
+            "test-message-warning",
+        ];
+
+        for (actual, expected) in std::iter::zip(messages, expected_messages) {
+            assert!(actual.contains(expected));
+        }
 
         let locs: Vec<TextLoc> = diag.all().iter().map(|d| d.loc.clone()).collect();
         assert_eq!(locs, vec![loc1(), loc2(), loc2(), loc3(), loc3()]);
@@ -260,30 +299,21 @@ mod tests {
 
     #[test]
     fn from_single_error_builds_expected_state() {
-        let diag = TextParserDiagnostics::from_single_error("boom", loc1());
+        let diag =
+            TextParserDiagnostics::from_single_error(TestMessage::Error { arg: "boom" }, loc1());
 
         assert_eq!(diag.all().len(), 1);
         assert_eq!(diag.all()[0].severity, Severity::Error);
-        assert_eq!(diag.all()[0].message, "boom");
+        assert!(diag.all()[0].message.contains("test-message-error"));
         assert_eq!(diag.error_count(false), 1);
         assert!(diag.has_errors(false));
     }
 
     #[test]
-    fn message_accepts_string_and_str() {
-        let mut diag = TextParserDiagnostics::default();
-        diag.error("a str literal", loc1());
-        diag.error(String::from("an owned String"), loc1());
-
-        assert_eq!(diag.all()[0].message, "a str literal");
-        assert_eq!(diag.all()[1].message, "an owned String");
-    }
-
-    #[test]
     fn only_warnings_does_not_trigger_has_errors_without_warn_as_error() {
         let mut diag = TextParserDiagnostics::default();
-        diag.warning("w1", loc1());
-        diag.warning("w2", loc1());
+        diag.warning(TestMessage::Warning { arg: "w1" }, loc1());
+        diag.warning(TestMessage::Warning { arg: "w2" }, loc1());
 
         assert!(!diag.has_errors(false));
         assert!(diag.has_errors(true));

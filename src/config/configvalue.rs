@@ -1,10 +1,15 @@
 //! # Configuration Value
 //!
+use fluent_i18n::ToFluentValue;
+use fluent_message::FluentMessage;
+
 use super::parse_helpers::{parse_fortran_float, unquote_single, TokenInfo};
 use std::fmt::{self, Debug};
 use std::str::FromStr;
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::t;
+
+#[derive(Debug, Clone, PartialEq, FluentMessage)]
 pub enum DicoType {
     String,
     Integer,
@@ -26,6 +31,11 @@ pub enum ConfigValue {
     FloatCollection(Vec<f64>),
 }
 
+impl ToFluentValue for DicoType {
+    fn to_fluent_value(&self) -> fluent_i18n::FluentValue<'static> {
+        fluent_i18n::FluentValue::String(t!(self.msg_id()).into())
+    }
+}
 pub fn parse_value_2<'a>(
     values: &'a Vec<TokenInfo>,
     kind: &DicoType,
@@ -51,13 +61,13 @@ pub fn parse_single_value_2<'a>(
             .map(ConfigValue::Boolean)
             .map_err(|err| (value, err)),
         DicoType::Integer => i64::from_str(raw).map(ConfigValue::Integer).map_err(|err| {
-            let msg = format!("'{}' is not a valid integer: {}", raw, err);
+            let msg = t!("config-value-invalid-integer", { "value" => raw.to_owned(), "reason" => err.to_string() });
             (value, msg)
         }),
         DicoType::Real => parse_fortran_float(raw)
             .map(ConfigValue::Float)
             .map_err(|err| {
-                let msg = format!("'{}' is not a valid float: {}", raw, err);
+                let msg = t!("config-value-invalid-real", { "value" => raw.to_owned(), "reason" => err.to_string() });
                 (value, msg)
             }),
         // DicoType::Path => {
@@ -97,7 +107,7 @@ fn parse_collection_values_2<'a>(
                 match i64::from_str(raw) {
                     Ok(val) => converted_values.push(val),
                     Err(err) => {
-                        let msg = format!("'{}' is not a valid integer: {}", raw, err);
+                        let msg = t!("config-value-invalid-integer", { "value" => raw.to_owned(), "reason" => err.to_string()});
                         invalid_values.push((entry, msg));
                     }
                 }
@@ -116,7 +126,7 @@ fn parse_collection_values_2<'a>(
                 match parse_fortran_float(raw) {
                     Ok(val) => converted_values.push(val),
                     Err(err) => {
-                        let msg = format!("'{}' is not a valid float: {}", raw, err);
+                        let msg = t!("config-value-invalid-real", { "value" => raw.to_owned(), "reason" => err.to_string() });
                         invalid_values.push((entry, msg));
                     }
                 }
@@ -148,98 +158,7 @@ fn parse_bool(raw: &str) -> Result<bool, String> {
     match raw.to_lowercase().as_str() {
         "vrai" | "oui" | "true" | ".true." | "yes" | "1" | "on" => Ok(true),
         "faux" | "non" | "false" | ".false." | "no" | "0" | "off" => Ok(false),
-        _ => Err(format!("'{}' is not a valid boolean", raw)),
-    }
-}
-
-pub fn parse_single_value(raw: &str, kind: &DicoType) -> Result<ConfigValue, String> {
-    match kind {
-        DicoType::Logical => parse_bool(raw).map(ConfigValue::Boolean),
-        DicoType::Integer => i64::from_str(raw)
-            .map(ConfigValue::Integer)
-            .map_err(|_| format!("'{}' is not a valid integer", raw)),
-        DicoType::Real => parse_fortran_float(raw)
-            .map(ConfigValue::Float)
-            .map_err(|_| format!("'{}' is not a valid float", raw)),
-        // DicoType::Path => {
-        //     let path = unquote_single(raw);
-        //     Ok(Value::Path(std::path::PathBuf::from(path)))
-        // }
-        DicoType::String => Ok(ConfigValue::String(unquote_single(raw).to_string())),
-    }
-}
-
-pub fn parse_collection_values(
-    raw_value_list: Vec<&str>,
-    kind: &DicoType,
-) -> Result<ConfigValue, String> {
-    match kind {
-        DicoType::Logical => {
-            let mut converted_values: Vec<bool> = Vec::with_capacity(raw_value_list.len());
-            let mut invalid_values: Vec<&str> = Vec::new();
-            for entry in raw_value_list {
-                match parse_bool(entry) {
-                    Ok(val) => converted_values.push(val),
-                    Err(_) => invalid_values.push(entry),
-                }
-            }
-            if invalid_values.is_empty() {
-                Ok(ConfigValue::BooleanCollection(converted_values))
-            } else {
-                Err(format!(
-                    "'{}' are not valid booleans",
-                    invalid_values.join(", ")
-                ))
-            }
-        }
-        DicoType::Integer => {
-            let mut converted_values: Vec<i64> = Vec::with_capacity(raw_value_list.len());
-            let mut invalid_values: Vec<&str> = Vec::new();
-            for entry in raw_value_list {
-                match i64::from_str(entry) {
-                    Ok(val) => converted_values.push(val),
-                    Err(_) => invalid_values.push(entry),
-                }
-            }
-            if invalid_values.is_empty() {
-                Ok(ConfigValue::IntegerCollection(converted_values))
-            } else {
-                Err(format!(
-                    "'{}' are not valid integers",
-                    invalid_values.join(", ")
-                ))
-            }
-        }
-        DicoType::Real => {
-            let mut converted_values: Vec<f64> = Vec::with_capacity(raw_value_list.len());
-            let mut invalid_values: Vec<&str> = Vec::new();
-            for entry in raw_value_list {
-                match parse_fortran_float(entry) {
-                    Ok(val) => converted_values.push(val),
-                    Err(_) => invalid_values.push(entry),
-                }
-            }
-            if invalid_values.is_empty() {
-                Ok(ConfigValue::FloatCollection(converted_values))
-            } else {
-                Err(format!(
-                    "'{}' are not valid floats",
-                    invalid_values.join(", ")
-                ))
-            }
-        }
-        // DicoType::Path => {
-        //     Ok(Value::PathCollection(
-        //         raw_value_list.iter()
-        //         .map(|raw| std::path::PathBuf::from(unquote_single(raw)))
-        //         .collect()))
-        // }
-        DicoType::String => Ok(ConfigValue::StringCollection(
-            raw_value_list
-                .iter()
-                .map(|raw| unquote_single(raw).to_string())
-                .collect(),
-        )),
+        _ => Err(t!("config-value-invalid-bool", { "value" => raw.to_owned()})),
     }
 }
 
@@ -251,12 +170,12 @@ macro_rules! impl_collect {
                 .enumerate()
                 .map(|(i, v)| match v {
                     ConfigValue::$scalar(inner) => Ok(inner),
-                    other => Err(format!("element {i} is not a {}: {:?}", stringify!($scalar), other)),
+                    other => Err(t!("config-value-invalid-type", { "index" => i, "expectedType" => stringify!($scalar), "actualType" => other.to_string()})),
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(ConfigValue::$collection),
             )+
-            other => Err(format!("cannot collect a Vec of {:?}", other)),
+            other => Err(t!("config-value-unimplemented-collection", { "actualType" => other.to_string() })),
         }
     };
 }
@@ -265,14 +184,14 @@ macro_rules! impl_into_scalars {
     ($self:expr, $( $collection:ident => $scalar:ident ),+ $(,)?) => {
         match $self {
             $( ConfigValue::$collection(v) => Ok(v.into_iter().map(ConfigValue::$scalar).collect()), )+
-            other => Err(format!("{:?} is not a collection variant", other)),
+            other => Err(t!("config-value-not-a-collection", { "type" => other.to_string()})),
         }
     };
 }
 
 impl ConfigValue {
     pub fn collect(values: Vec<ConfigValue>) -> Result<ConfigValue, String> {
-        let first = values.first().ok_or("cannot collect an empty Vec")?;
+        let first = values.first().ok_or(t!("config-value-collect-empty-vec"))?;
         impl_collect!(first, values,
             String  => StringCollection,
             Path    => PathCollection,
@@ -392,6 +311,12 @@ impl fmt::Display for ConfigValue {
                     .join(", ")
             ),
         }
+    }
+}
+
+impl ToFluentValue for ConfigValue {
+    fn to_fluent_value(&self) -> fluent_i18n::FluentValue<'static> {
+        fluent_i18n::FluentValue::String(self.to_string().into())
     }
 }
 

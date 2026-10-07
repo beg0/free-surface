@@ -3,4 +3,4 @@
 mod text;
 
 pub use text::create_text_diagnostic_renderer;
-pub use text::TextDiagnosticsRendererOptions;
+pub use text::{TextDiagnosticsRenderer, TextDiagnosticsRendererOptions};
