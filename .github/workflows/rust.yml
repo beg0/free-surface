@@ -35,5 +35,7 @@ jobs:
         run: cargo check --tests --all-features
       - name: Run cargo test (all features)
         run: cargo test -r -- --include-ignored
-      - name: Run cargo doc
-        run: cargo doc --all-features
+      - name: Build doc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --all-features --no-deps
