@@ -9,6 +9,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use serde::ser::SerializeStruct;
+
 pub const UNKNOWN_FILE: &str = "<unknown>";
 
 /// A localisation in a text file
@@ -76,6 +78,19 @@ impl fmt::Display for TextLoc {
         } else {
             write!(f, "{}:{}:{}", filename, self.line, self.column)
         }
+    }
+}
+
+impl serde::Serialize for TextLoc {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("TextLoc", 3)?;
+        s.serialize_field("filename", self.filename())?;
+        s.serialize_field("line", &self.line)?;
+        s.serialize_field("column", &self.column)?;
+        s.end()
     }
 }
 
