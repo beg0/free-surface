@@ -3,7 +3,7 @@
 use std::io::Write;
 
 use super::super::super::collector::Severity;
-use super::super::super::collector::TextParserDiagnostics;
+use super::super::super::collector::{DiagnosticLocation, TextParserDiagnostics};
 use crate::t;
 use anstyle::{AnsiColor, Effects, Style};
 
@@ -53,9 +53,14 @@ impl<W: Write> TextDiagnosticsRenderer for TerminalTextDiagnosticsRenderer<W> {
         let palette = Palette::colored();
 
         for d in diagnostics.all() {
-            palette.textloc.write_to(&mut self.writer)?;
-            write!(self.writer, "{}:", d.loc)?;
-            palette.textloc.write_reset_to(&mut self.writer)?;
+            match d.loc {
+                DiagnosticLocation::Filename(_) | DiagnosticLocation::TextLoc(_) => {
+                    palette.textloc.write_to(&mut self.writer)?;
+                    write!(self.writer, "{}:", d.loc)?;
+                    palette.textloc.write_reset_to(&mut self.writer)?;
+                }
+                DiagnosticLocation::None => {}
+            }
             write!(self.writer, " ")?;
 
             self.render_severity(&d.severity, &palette)?;
@@ -127,18 +132,15 @@ mod tests {
 
     fn sample_diagnostics() -> TextParserDiagnostics {
         let mut diagnostics = TextParserDiagnostics::default();
-        diagnostics.error(
-            TestErrorMessage(),
-            TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)),
-        );
-        diagnostics.warning(
-            TestWarningMessage(),
-            TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)),
-        );
-        diagnostics.hint(
-            TestHintMessage(),
-            TextLoc::from((FILE_WITH_HINT, HINT_LINE)),
-        );
+        diagnostics
+            .error(TestErrorMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)));
+        diagnostics
+            .warning(TestWarningMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)));
+        diagnostics
+            .hint(TestHintMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_HINT, HINT_LINE)));
         diagnostics
     }
 

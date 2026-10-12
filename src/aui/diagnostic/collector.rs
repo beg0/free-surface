@@ -3,7 +3,7 @@
 
 mod text;
 
-pub use text::{TextParserDiagnostic, TextParserDiagnostics};
+pub use text::{DiagnosticLocation, TextParserDiagnostic, TextParserDiagnostics};
 
 /// Diagnostic severity
 #[derive(Clone, PartialEq, Debug)]

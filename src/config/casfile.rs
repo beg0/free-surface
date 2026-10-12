@@ -172,7 +172,8 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             }
             "STO" => {
                 self.diag
-                    .error(DamoclesError::StopCommand { cmd: cmd.token }, cmd.start_pos);
+                    .error(DamoclesError::StopCommand { cmd: cmd.token })
+                    .with_textloc(cmd.start_pos);
                 return None;
             }
             "FIN" => {
@@ -182,10 +183,9 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
                 eprintln!("cmd DOC is deprecated");
             }
             _ => {
-                self.diag.error(
-                    DamoclesError::UnknownCommand { cmd: cmd.token },
-                    cmd.start_pos,
-                );
+                self.diag
+                    .error(DamoclesError::UnknownCommand { cmd: cmd.token })
+                    .with_textloc(cmd.start_pos);
                 return None;
             }
         };
@@ -199,12 +199,11 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
 
     fn new_field(&mut self, mut kpi: KeywordParseInfo) {
         let Some(keyword) = self.dico.get(kpi.keyname()) else {
-            self.diag.error(
-                ParseError::UnknownKey {
+            self.diag
+                .error(ParseError::UnknownKey {
                     key: kpi.key.token.clone(),
-                },
-                kpi.key.start_pos.clone(),
-            );
+                })
+                .with_textloc(kpi.key.start_pos.clone());
             return;
         };
 
@@ -218,13 +217,12 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             Ok(v) => v,
             Err(errors) => {
                 for (entry, reason) in errors {
-                    self.diag.error(
-                        ParseError::InvalidValue {
+                    self.diag
+                        .error(ParseError::InvalidValue {
                             key: kpi.key.token.clone(),
                             reason,
-                        },
-                        entry.start_pos.clone(),
-                    );
+                        })
+                        .with_textloc(entry.start_pos.clone());
                 }
                 return;
             }
@@ -235,15 +233,14 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             let nb_of_failures = failures.len();
             for failed_index in failures {
                 if let Some(failed_value) = value_parse_infos.get(failed_index) {
-                    self.diag.error(
-                        ParseError::OutOfBound {
+                    self.diag
+                        .error(ParseError::OutOfBound {
                             key: kpi.key.token.clone(),
                             value: failed_value.token.clone(),
                             min: boundaries.0,
                             max: boundaries.1,
-                        },
-                        failed_value.start_pos.clone(),
-                    );
+                        })
+                        .with_textloc(failed_value.start_pos.clone());
                 }
             }
             if nb_of_failures > 0 {
@@ -256,14 +253,13 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             Err(failures) => {
                 for (failed_index, reason) in failures {
                     if let Some(failed_value) = value_parse_infos.get(failed_index) {
-                        self.diag.error(
-                            ParseError::BadChoice {
+                        self.diag
+                            .error(ParseError::BadChoice {
                                 key: kpi.key.token.clone(),
                                 value: failed_value.token.clone(),
                                 reason,
-                            },
-                            failed_value.start_pos.clone(),
-                        );
+                            })
+                            .with_textloc(failed_value.start_pos.clone());
                     }
                 }
                 return;

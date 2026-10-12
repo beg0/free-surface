@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::io::Write;
 
+use crate::aui::diagnostic::collector::DiagnosticLocation;
+
 use super::super::super::collector::Severity;
 use super::super::super::collector::TextParserDiagnostics;
 
@@ -29,12 +31,18 @@ impl<W: Write> TextDiagnosticsRenderer for JsonTextDiagnosticsRenderer<W> {
                     Severity::Warning => "warning",
                     Severity::Hint => "hint",
                 };
-                let mut location: HashMap<&str, serde_json::Value> = HashMap::new();
-                location.insert("filename", serde_json::to_value(d.loc.filename())?);
-                location.insert("line", serde_json::to_value(d.loc.line())?);
-                location.insert("column", serde_json::to_value(d.loc.column())?);
-
-                let locations = vec![location];
+                let mut locations: Vec<serde_json::Value> = Vec::with_capacity(1);
+                match &d.loc {
+                    DiagnosticLocation::TextLoc(loc) => {
+                        locations.push(serde_json::to_value(loc)?);
+                    }
+                    DiagnosticLocation::Filename(filename) => {
+                        locations.push(serde_json::json!({
+                            "filename": filename
+                        }));
+                    }
+                    DiagnosticLocation::None => {}
+                }
 
                 let mut root: HashMap<&str, serde_json::Value> = HashMap::new();
 
@@ -95,18 +103,15 @@ mod tests {
 
     fn sample_diagnostics() -> TextParserDiagnostics {
         let mut diagnostics = TextParserDiagnostics::default();
-        diagnostics.error(
-            TestErrorMessage(),
-            TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)),
-        );
-        diagnostics.warning(
-            TestWarningMessage(),
-            TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)),
-        );
-        diagnostics.hint(
-            TestHintMessage(),
-            TextLoc::from((FILE_WITH_HINT, HINT_LINE)),
-        );
+        diagnostics
+            .error(TestErrorMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)));
+        diagnostics
+            .warning(TestWarningMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)));
+        diagnostics
+            .hint(TestHintMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_HINT, HINT_LINE)));
         diagnostics
     }
 

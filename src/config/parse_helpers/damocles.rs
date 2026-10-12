@@ -236,7 +236,7 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                         if find_assignment {
                             let e = DamoclesError::UnexpectedAssignment { assignment: c };
                             let pos = self.field_parser.loc(chars.pos());
-                            self.field_parser.diag().error(e, pos);
+                            self.field_parser.diag().error(e).with_textloc(pos);
                         }
                         tokenizer_state = TokenizerState::Outside;
                         find_assignment = true;
@@ -248,7 +248,7 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                         if find_assignment || key.is_none() {
                             let e = DamoclesError::UnexpectedAssignment { assignment: c };
                             let pos = self.field_parser.loc(chars.pos());
-                            self.field_parser.diag().error(e, pos);
+                            self.field_parser.diag().error(e).with_textloc(pos);
                         }
                         find_assignment = true;
                     }
@@ -267,7 +267,7 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                                     key: token.clone().unwrap().token.clone(),
                                 };
                                 let pos = self.field_parser.loc(chars.pos());
-                                self.field_parser.diag().error(e, pos);
+                                self.field_parser.diag().error(e).with_textloc(pos);
                             } else {
                                 expected_value_cnt += 1;
                             }
@@ -282,7 +282,7 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                             if key.is_none() || values.is_empty() {
                                 let e = DamoclesError::UnexpectedListSeparator { sep: c };
                                 let pos = self.field_parser.loc(chars.pos());
-                                self.field_parser.diag().error(e, pos);
+                                self.field_parser.diag().error(e).with_textloc(pos);
                             }
                         }
                     }
@@ -293,7 +293,7 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                     if c.is_control() && !c.is_whitespace() {
                         let e = DamoclesError::NonPrintableCharacter { char: c };
                         let pos = self.field_parser.loc(chars.pos());
-                        self.field_parser.diag().error(e, pos);
+                        self.field_parser.diag().error(e).with_textloc(pos);
                     }
 
                     match tokenizer_state {
@@ -344,7 +344,8 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                         let e = DamoclesError::MissingAssignment {};
                         self.field_parser
                             .diag()
-                            .error(e, unwrapped_token.start_pos.clone());
+                            .error(e)
+                            .with_textloc(unwrapped_token.start_pos.clone());
                     }
                 }
                 token = None;
@@ -391,7 +392,7 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
 
                 let e = DamoclesError::MissingEndQuote { quote };
                 let pos = self.field_parser.loc(chars.pos());
-                self.field_parser.diag().error(e, pos);
+                self.field_parser.diag().error(e).with_textloc(pos);
             }
         }
 
@@ -411,7 +412,8 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                     let e = DamoclesError::MissingAssignment {};
                     self.field_parser
                         .diag()
-                        .error(e, unwrapped_token.start_pos.clone());
+                        .error(e)
+                        .with_textloc(unwrapped_token.start_pos.clone());
                 }
             }
             //token = None;
@@ -428,7 +430,10 @@ impl<'a, T: DamoclesParser> DamoclesParseContext<'a, T> {
                 let e = DamoclesError::MissingEndValue {
                     key: unwrapped_key.token.to_owned(),
                 };
-                self.field_parser.diag().error(e, unwrapped_key.start_pos);
+                self.field_parser
+                    .diag()
+                    .error(e)
+                    .with_textloc(unwrapped_key.start_pos);
             }
         } else {
             // Nothing to proceed.

@@ -135,14 +135,12 @@ fn parse_block(
             } else {
                 block_pos.clone()
             };
-            diag.error(
-                DicoParseError::TooManyValues {
-                    field: key.to_string(),
-                    expected_count,
-                    got_count: parse_infos.len(),
-                },
-                pos,
-            );
+            diag.error(DicoParseError::TooManyValues {
+                field: key.to_string(),
+                expected_count,
+                got_count: parse_infos.len(),
+            })
+            .with_textloc(pos);
 
             None
         } else {
@@ -160,14 +158,12 @@ fn parse_block(
                 block_pos.clone()
             };
 
-            diag.error(
-                DicoParseError::NotEnoughValues {
-                    field: key.to_string(),
-                    expected_count: 1,
-                    got_count: parse_infos.len(),
-                },
-                pos,
-            );
+            diag.error(DicoParseError::NotEnoughValues {
+                field: key.to_string(),
+                expected_count: 1,
+                got_count: parse_infos.len(),
+            })
+            .with_textloc(pos);
 
             None
         } else {
@@ -187,10 +183,8 @@ fn parse_block(
         match get_one(key, diag) {
             Some(token_info) => token_info.token.clone(),
             None => {
-                diag.error(
-                    DicoParseError::MissingField { field: key },
-                    block_pos.clone(),
-                );
+                diag.error(DicoParseError::MissingField { field: key })
+                    .with_textloc(block_pos.clone());
                 String::new()
             }
         }
@@ -203,13 +197,11 @@ fn parse_block(
             "REAL" | "REEL" => Some(DicoType::Real),
             "LOGICAL" | "LOGIQUE" => Some(DicoType::Logical),
             other => {
-                diag.error(
-                    DicoParseError::InvalidValue {
-                        field: "TYPE".into(),
-                        reason: format!("unknown type '{}'", other),
-                    },
-                    desc.start_pos.clone(),
-                );
+                diag.error(DicoParseError::InvalidValue {
+                    field: "TYPE".into(),
+                    reason: format!("unknown type '{}'", other),
+                })
+                .with_textloc(desc.start_pos.clone());
                 None
             }
         })
@@ -243,14 +235,12 @@ fn parse_block(
                 Ok(res) => Some(res),
                 Err(errors) => {
                     for (entry, reason) in errors {
-                        diag.error(
-                            DicoParseError::InvalidDefaultValue {
-                                field: String::from(names.2),
-                                value: entry.token.clone(),
-                                reason,
-                            },
-                            entry.start_pos.clone(),
-                        );
+                        diag.error(DicoParseError::InvalidDefaultValue {
+                            field: String::from(names.2),
+                            value: entry.token.clone(),
+                            reason,
+                        })
+                        .with_textloc(entry.start_pos.clone());
                     }
                     None
                 }
@@ -283,14 +273,12 @@ fn parse_block(
                     });
                 }
                 Err((entry, reason)) => {
-                    diag.error(
-                        DicoParseError::InvalidChoice {
-                            field: String::from(names.3),
-                            option: entry.token.clone(),
-                            reason,
-                        },
-                        entry.start_pos.clone(),
-                    );
+                    diag.error(DicoParseError::InvalidChoice {
+                        field: String::from(names.3),
+                        option: entry.token.clone(),
+                        reason,
+                    })
+                    .with_textloc(entry.start_pos.clone());
                 }
             };
         }
@@ -318,13 +306,11 @@ fn parse_block(
             "TUPLE" => Some(GuiControl::Tuple),
             "FILE_OR_FOLDER" | "LISTE IS FICHIER" => Some(GuiControl::Path),
             other => {
-                diag.error(
-                    DicoParseError::InvalidValue {
-                        field: "APPARENCE".into(),
-                        reason: format!("unknown apparence '{}'", other),
-                    },
-                    token_info.start_pos.clone(),
-                );
+                diag.error(DicoParseError::InvalidValue {
+                    field: "APPARENCE".into(),
+                    reason: format!("unknown apparence '{}'", other),
+                })
+                .with_textloc(token_info.start_pos.clone());
                 None
             }
         });
@@ -356,10 +342,8 @@ fn parse_block(
     match all_equals(choices_cnt) {
         Ok(_) => {}
         Err((cnt1, cnt2)) => {
-            diag.error(
-                DicoParseError::InconsistentChoiceOption { cnt1, cnt2 },
-                block_pos.clone(),
-            );
+            diag.error(DicoParseError::InconsistentChoiceOption { cnt1, cnt2 })
+                .with_textloc(block_pos.clone());
         }
     }
 
@@ -450,7 +434,8 @@ impl DamoclesParser for DicoFieldParser {
             }
             "STO" => {
                 self.diag
-                    .error(DamoclesError::StopCommand { cmd: cmd.token }, cmd.start_pos);
+                    .error(DamoclesError::StopCommand { cmd: cmd.token })
+                    .with_textloc(cmd.start_pos);
                 return None;
             }
             "FIN" => {
@@ -460,10 +445,9 @@ impl DamoclesParser for DicoFieldParser {
                 eprintln!("cmd DOC is deprecated");
             }
             _ => {
-                self.diag.error(
-                    DamoclesError::UnknownCommand { cmd: cmd.token },
-                    cmd.start_pos,
-                );
+                self.diag
+                    .error(DamoclesError::UnknownCommand { cmd: cmd.token })
+                    .with_textloc(cmd.start_pos);
                 return None;
             }
         };
@@ -519,12 +503,11 @@ impl DamoclesParser for DicoFieldParser {
                 self.block_pos = block_pos;
             }
         } else {
-            self.diag.error(
-                DicoParseError::UnknownField {
+            self.diag
+                .error(DicoParseError::UnknownField {
                     field: kpi.key.token.to_string(),
-                },
-                kpi.key.start_pos.clone(),
-            );
+                })
+                .with_textloc(kpi.key.start_pos.clone());
         }
     }
 }
@@ -574,20 +557,16 @@ where
 {
     match description {
         Some(desc) => desc.token.trim().parse::<T>().unwrap_or_else(|e| {
-            diag.error(
-                DicoParseError::InvalidValue {
-                    field: name.into(),
-                    reason: format!("'{}' is not a valid integer: {:#}", desc.token, e),
-                },
-                desc.start_pos.clone(),
-            );
+            diag.error(DicoParseError::InvalidValue {
+                field: name.into(),
+                reason: format!("'{}' is not a valid integer: {:#}", desc.token, e),
+            })
+            .with_textloc(desc.start_pos.clone());
             T::default()
         }),
         None => {
-            diag.error(
-                DicoParseError::MissingField { field: name },
-                block_pos.clone(),
-            );
+            diag.error(DicoParseError::MissingField { field: name })
+                .with_textloc(block_pos.clone());
             T::default()
         }
     }
@@ -604,23 +583,19 @@ fn parse_controle(
     ) {
         (Ok(min_float), Ok(max_float)) => Some((min_float, max_float)),
         (Err(min_err), _) => {
-            diag.error(
-                DicoParseError::InvalidValue {
-                    field: "CONTROLE".to_owned(),
-                    reason: format!("Invalid min value '{}': {}", min.token, min_err),
-                },
-                min.start_pos.clone(),
-            );
+            diag.error(DicoParseError::InvalidValue {
+                field: "CONTROLE".to_owned(),
+                reason: format!("Invalid min value '{}': {}", min.token, min_err),
+            })
+            .with_textloc(min.start_pos.clone());
             None
         }
         (_, Err(max_err)) => {
-            diag.error(
-                DicoParseError::InvalidValue {
-                    field: "CONTROLE".to_owned(),
-                    reason: format!("Invalid max value '{}': {}", max.token, max_err),
-                },
-                max.start_pos.clone(),
-            );
+            diag.error(DicoParseError::InvalidValue {
+                field: "CONTROLE".to_owned(),
+                reason: format!("Invalid max value '{}': {}", max.token, max_err),
+            })
+            .with_textloc(max.start_pos.clone());
             None
         }
     }
