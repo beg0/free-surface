@@ -50,6 +50,12 @@ impl TextParserDiagnostic {
         self.loc = DiagnosticLocation::TextLoc(loc);
         self
     }
+
+    /// Add filename info to a diagnostic
+    pub fn with_filename(&mut self, filename: impl Into<String>) -> &mut Self {
+        self.loc = DiagnosticLocation::Filename(filename.into());
+        self
+    }
 }
 
 /// A diagnostic collector for Text-based document parsing
@@ -219,6 +225,13 @@ mod tests {
     fn loc3() -> TextLoc {
         TextLoc::from(("test.txt", 5))
     }
+    fn filename1() -> String {
+        String::from("the_ultimate_test.txt")
+    }
+
+    fn filename2() -> String {
+        String::from("strange_file.txt")
+    }
 
     #[test]
     fn default_diagnostics_is_empty() {
@@ -334,6 +347,51 @@ mod tests {
         assert!(diag.has_errors(true));
     }
 
+    #[test]
+    fn diags_with_filename() {
+        let mut diag = TextParserDiagnostics::default();
+
+        diag.error(TestMessage::Error {
+            arg: "something bad",
+        })
+        .with_filename(filename1());
+
+        diag.warning(TestMessage::Warning {
+            arg: "something strange",
+        })
+        .with_filename(filename2());
+
+        diag.hint(TestMessage::Hint { arg: "take a note" })
+            .with_filename(filename1());
+
+        diag.error(TestMessage::Error {
+            arg: "error with loc",
+        })
+        .with_textloc(loc1());
+
+        assert_eq!(diag.all().len(), 4);
+        let severities: Vec<Severity> = diag.all().iter().map(|d| d.severity.clone()).collect();
+        assert_eq!(
+            severities,
+            vec![
+                Severity::Error,
+                Severity::Warning,
+                Severity::Hint,
+                Severity::Error,
+            ]
+        );
+
+        let locs: Vec<DiagnosticLocation> = diag.all().iter().map(|d| d.loc.clone()).collect();
+        assert_eq!(
+            locs,
+            vec![
+                DiagnosticLocation::Filename(filename1()),
+                DiagnosticLocation::Filename(filename2()),
+                DiagnosticLocation::Filename(filename1()),
+                DiagnosticLocation::TextLoc(loc1()),
+            ]
+        );
+    }
     #[test]
     fn from_single_error_builds_expected_state() {
         let diag =
