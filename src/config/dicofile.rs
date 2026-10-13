@@ -32,6 +32,7 @@ pub struct Dico {
 }
 
 impl Dico {
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&DicoKeyword> {
         let normalized_name = normalize_keyword_name(name);
 
@@ -68,6 +69,7 @@ impl Dico {
     /// let dico = parse("").unwrap();
     /// assert_eq!(dico.len(), 0);
     /// ```
+    #[must_use]
     pub fn len(&self) -> usize {
         let first = self.per_locale.iter().next();
         match first {
@@ -86,6 +88,7 @@ impl Dico {
     /// let dico = parse("").unwrap();
     /// assert!(dico.is_empty());
     /// ```
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         let first = self.per_locale.iter().next();
         match first {
@@ -107,6 +110,7 @@ impl fmt::Debug for Dico {
     }
 }
 
+#[must_use]
 pub struct Iter<'a> {
     //  base: &'a DicoInner,
     iter: std::collections::hash_map::Iter<'a, String, Rc<DicoKeyword>>,

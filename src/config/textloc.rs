@@ -97,6 +97,7 @@ impl serde::Serialize for TextLoc {
 impl TextLoc {
     /// Clone this TextLoc and modify the line number
     #[allow(dead_code)]
+    #[must_use]
     pub fn clone_with_line(&self, line: usize) -> TextLoc {
         TextLoc {
             filename: Arc::clone(&self.filename),
@@ -107,6 +108,7 @@ impl TextLoc {
 
     /// Clone this [TextLoc] and modify the line number
     #[allow(dead_code)]
+    #[must_use]
     pub fn clone_with_line_col(&self, line: usize, column: usize) -> TextLoc {
         TextLoc {
             filename: Arc::clone(&self.filename),
@@ -116,6 +118,7 @@ impl TextLoc {
     }
     /// Clone this [TextLoc] and add an offset to the line number
     #[allow(dead_code)]
+    #[must_use]
     pub fn clone_with_line_offset(&self, line_offset: usize) -> TextLoc {
         TextLoc {
             filename: Arc::clone(&self.filename),
@@ -126,6 +129,7 @@ impl TextLoc {
 
     /// Clone this [TextLoc] and add an offset to the line number
     #[allow(dead_code)]
+    #[must_use]
     pub fn clone_with_line_offset_col(&self, line_offset: usize, column: usize) -> TextLoc {
         TextLoc {
             filename: Arc::clone(&self.filename),
@@ -136,6 +140,7 @@ impl TextLoc {
 
     /// Get the filename associated with this position
     #[allow(dead_code)]
+    #[must_use]
     pub fn filename(&self) -> &PathBuf {
         #[allow(clippy::explicit_auto_deref)]
         &*self.filename
@@ -144,6 +149,7 @@ impl TextLoc {
     /// Get the line number associated with this position
     /// Line numbers starts at 1. a 0 means anywhere in the file
     #[allow(dead_code)]
+    #[must_use]
     pub fn line(&self) -> usize {
         self.line
     }
@@ -152,6 +158,7 @@ impl TextLoc {
     /// 0 means no specific column is specified. It can be the full line or anywhere
     /// on the line.
     #[allow(dead_code)]
+    #[must_use]
     pub fn column(&self) -> usize {
         self.column
     }

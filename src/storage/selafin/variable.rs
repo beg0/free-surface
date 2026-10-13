@@ -11,6 +11,7 @@ pub struct SlfVariable {
 }
 
 impl SlfVariable {
+    #[must_use]
     pub fn new(name: &str, unit: &str) -> Self {
         SlfVariable {
             name: name.to_string(),

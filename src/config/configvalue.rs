@@ -211,6 +211,7 @@ impl ConfigValue {
         )
     }
 
+    #[must_use]
     pub fn is_collection(&self) -> bool {
         match self {
             ConfigValue::String(_) => false,
@@ -226,6 +227,7 @@ impl ConfigValue {
         }
     }
 
+    #[must_use]
     pub fn is_scalar(&self) -> bool {
         !self.is_collection()
     }
@@ -234,6 +236,7 @@ impl ConfigValue {
     ///
     /// On collection, it returns the number of elements in underling vector, on scalar, it returns `1`.
     #[allow(dead_code)]
+    #[must_use]
     pub fn len(&self) -> usize {
         match self {
             ConfigValue::String(_) => 1,
@@ -253,6 +256,7 @@ impl ConfigValue {
     ///
     /// On scalar returns `false`.
     #[allow(dead_code)]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         match self {
             ConfigValue::String(_) => false,

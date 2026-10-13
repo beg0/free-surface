@@ -15,6 +15,7 @@ pub enum SlfArray1D {
 }
 
 impl SlfArray1D {
+    #[must_use]
     pub fn new(float_size: FloatSize) -> Self {
         match float_size {
             FloatSize::F32 => SlfArray1D::Float(Vec::new()),
@@ -22,6 +23,7 @@ impl SlfArray1D {
         }
     }
 
+    #[must_use]
     pub fn with_capacity(float_size: FloatSize, capacity: usize) -> Self {
         match float_size {
             FloatSize::F32 => SlfArray1D::Float(Vec::with_capacity(capacity)),
@@ -36,6 +38,7 @@ impl SlfArray1D {
         }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         match self {
             SlfArray1D::Float(v) => v.len(),
@@ -43,6 +46,7 @@ impl SlfArray1D {
         }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         match self {
             SlfArray1D::Float(v) => v.is_empty(),
@@ -104,6 +108,7 @@ impl Default for SlfArray2D {
 
 impl SlfArray2D {
     #[allow(dead_code)]
+    #[must_use]
     pub fn len(&self) -> usize {
         match self {
             SlfArray2D::Float { x, y } => {
@@ -118,6 +123,7 @@ impl SlfArray2D {
     }
 
     #[allow(dead_code)]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         match self {
             SlfArray2D::Float { x, y } => {
@@ -134,6 +140,7 @@ impl SlfArray2D {
     /// Convert a SlfArray2D into a pair of `Vec<f64>`
     ///
     /// Do not consume the SlfArray2D
+    #[must_use]
     pub fn to_vec(&self) -> (Vec<f64>, Vec<f64>) {
         match self {
             SlfArray2D::Float { x, y } => (
@@ -431,14 +438,14 @@ mod tests {
     #[cfg(debug_assertions)]
     #[should_panic]
     fn float_len_panics_when_x_longer_than_y() {
-        float(vec![1.0, 2.0], vec![1.0]).len();
+        let _ = float(vec![1.0, 2.0], vec![1.0]).len();
     }
 
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic]
     fn float_len_panics_when_y_longer_than_x() {
-        float(vec![1.0], vec![1.0, 2.0]).len();
+        let _ = float(vec![1.0], vec![1.0, 2.0]).len();
     }
 
     // -----------------------------------------------------------------------
@@ -464,14 +471,14 @@ mod tests {
     #[cfg(debug_assertions)]
     #[should_panic]
     fn double_len_panics_when_x_longer_than_y() {
-        double(vec![1.0, 2.0], vec![1.0]).len();
+        let _ = double(vec![1.0, 2.0], vec![1.0]).len();
     }
 
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic]
     fn double_len_panics_when_y_longer_than_x() {
-        double(vec![1.0], vec![1.0, 2.0]).len();
+        let _ = double(vec![1.0], vec![1.0, 2.0]).len();
     }
 
     // -----------------------------------------------------------------------
@@ -492,14 +499,14 @@ mod tests {
     #[cfg(debug_assertions)]
     #[should_panic]
     fn float_is_empty_panics_when_only_x_is_empty() {
-        float(vec![], vec![1.0]).is_empty();
+        let _ = float(vec![], vec![1.0]).is_empty();
     }
 
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic]
     fn float_is_empty_panics_when_only_y_is_empty() {
-        float(vec![1.0], vec![]).is_empty();
+        let _ = float(vec![1.0], vec![]).is_empty();
     }
 
     // -----------------------------------------------------------------------
@@ -520,14 +527,14 @@ mod tests {
     #[cfg(debug_assertions)]
     #[should_panic]
     fn double_is_empty_panics_when_only_x_is_empty() {
-        double(vec![], vec![1.0]).is_empty();
+        let _ = double(vec![], vec![1.0]).is_empty();
     }
 
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic]
     fn double_is_empty_panics_when_only_y_is_empty() {
-        double(vec![1.0], vec![]).is_empty();
+        let _ = double(vec![1.0], vec![]).is_empty();
     }
 
     // -----------------------------------------------------------------------

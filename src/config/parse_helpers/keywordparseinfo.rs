@@ -18,6 +18,7 @@ pub struct KeywordParseInfo {
 }
 
 /// Clone the accessor with a new text value
+#[must_use]
 fn fork_token_info(ti: &TokenInfo, new_text: &str) -> TokenInfo {
     TokenInfo {
         token: new_text.to_owned(),
@@ -27,10 +28,12 @@ fn fork_token_info(ti: &TokenInfo, new_text: &str) -> TokenInfo {
 }
 
 impl KeywordParseInfo {
+    #[must_use]
     pub fn keyname(&self) -> &String {
         &self.key.token
     }
 
+    #[must_use]
     pub fn valuenames(&self) -> Vec<&String> {
         self.values.iter().map(|v| &v.token).collect()
     }
@@ -47,6 +50,7 @@ impl KeywordParseInfo {
         }
     }
 
+    #[must_use]
     pub fn fixed_list_values(&self, kind: &DicoType, nargs: usize) -> Vec<TokenInfo> {
         if (self.values.len() == 1) && (*kind == DicoType::String) && (nargs != 1) {
             let single_value = &self.values[0];

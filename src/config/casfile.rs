@@ -59,6 +59,7 @@ struct ParserInternal<'a> {
 }
 
 impl<'a> Parser<'a> {
+    #[must_use]
     pub fn new(dico: &'a dicofile::Dico) -> Self {
         Self { dico }
     }
