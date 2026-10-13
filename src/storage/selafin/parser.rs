@@ -614,7 +614,7 @@ where
         let name = var_def.name.clone();
         let ve = VariableEvolution {
             var: var_def.clone(),
-            values: values.into_iter().map(|v| v.into()).collect(),
+            values: values.into_iter().map(Into::into).collect(),
         };
 
         vars.insert(name, ve);
