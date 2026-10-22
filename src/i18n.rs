@@ -9,12 +9,18 @@ use fluent_i18n::fluent_templates::{LanguageIdentifier, Loader};
 use fluent_langneg::{negotiate_languages, NegotiationStrategy};
 use unic_langid::langid;
 
+mod units;
+use units::{units, with_units};
+
 fluent_templates::static_loader! {
     static FREE_SURFACE_LOCALES = {
         locales: "resources/translations",
         fallback_language: "en-US",
         customise: |bundle| {
             bundle.set_use_isolating(false);
+            bundle.add_function( "UNITS", units).expect("add UNITS function to fluent");
+            bundle.add_function( "WITH_UNITS", with_units).expect("add WITH_UNITS function to fluent");
+
         }
     };
 }
