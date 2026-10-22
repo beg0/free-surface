@@ -1,12 +1,12 @@
-// #! Render text parsing diagnostics in JSON format
+// #! Render parsing diagnostics in JSON format
 
 use std::collections::HashMap;
 use std::io::Write;
 
 use crate::aui::diagnostic::collector::DiagnosticLocation;
 
-use super::super::super::collector::Severity;
-use super::super::super::collector::TextParserDiagnostics;
+use super::super::collector::Severity;
+use super::super::collector::TextParserDiagnostics;
 
 use super::TextDiagnosticsRenderer;
 

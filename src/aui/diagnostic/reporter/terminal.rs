@@ -2,8 +2,8 @@
 
 use std::io::Write;
 
-use super::super::super::collector::Severity;
-use super::super::super::collector::{DiagnosticLocation, TextParserDiagnostics};
+use super::super::collector::Severity;
+use super::super::collector::{DiagnosticLocation, TextParserDiagnostics};
 use crate::t;
 use anstyle::{AnsiColor, Effects, Style};
 
