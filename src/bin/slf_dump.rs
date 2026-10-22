@@ -251,7 +251,6 @@ fn render_elements(e: &mut dyn ConfigViewer, slf: &Selafin, layer: Option<usize>
         Some(n) => format!("elements:layer={n}"),
         None => "elements".to_string(),
     };
-    e.emit_section_start(&section_name);
 
     let npd2 = geo.point_per_layer_element();
     let point_names: Vec<String> = (0..npd2).map(|i| format!("n{i}")).collect();
@@ -272,6 +271,8 @@ fn render_elements(e: &mut dyn ConfigViewer, slf: &Selafin, layer: Option<usize>
         }
         None => (0..geo.planes_cnt() as usize).collect(),
     };
+
+    e.emit_section_start(&section_name);
 
     let mut rows: Vec<Vec<JsonValue>> = Vec::new();
     for l in layers_to_show {
@@ -310,8 +311,6 @@ fn render_results(e: &mut dyn ConfigViewer, slf: &Selafin) {
 
 fn render_history(e: &mut dyn ConfigViewer, slf: &Selafin, query: &HistoryQuery) {
     let ts = slf.results();
-    let section_name = format!("history:{}:{}", query.variable, query.time_index);
-    e.emit_section_start(&section_name);
 
     if query.time_index >= ts.step_count() {
         eprintln!(
@@ -330,6 +329,9 @@ fn render_history(e: &mut dyn ConfigViewer, slf: &Selafin, query: &HistoryQuery)
         }
         process::exit(1);
     };
+
+    let section_name = format!("history:{}:{}", query.variable, query.time_index);
+    e.emit_section_start(&section_name);
 
     let values = &ve.values[query.time_index];
     let rows: Vec<Vec<JsonValue>> = match values {
