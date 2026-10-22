@@ -14,6 +14,12 @@
         {
             "filename": "tools/dict/*.txt",
             "enabled": false
+        },
+        // Packages names in Cargo.toml often hurt CSpell
+        // They are ignored in "rust" dictionary
+        {
+            "filename": "Cargo.toml",
+            "dictionaries": ["rust"]
         }
     ]
 }
