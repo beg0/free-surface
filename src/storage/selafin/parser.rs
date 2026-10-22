@@ -267,14 +267,14 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // 1.1 - Title (80-character string)
     let title = {
         let data = read_record(&mut reader, endian)?;
-        if data.len() < 80 {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!("Title record too short: {} bytes", data.len()),
-            });
-        }
+        // if data.len() < 80 {
+        //     return Err(binrw::Error::AssertFail {
+        //         pos: reader.stream_position()?,
+        //         message: format!("Title record too short: {} bytes", data.len()),
+        //     });
+        // }
 
-        let stringified = ascii_record_to_string(&data[..80]);
+        let stringified = ascii_record_to_string(&data);
 
         // Try to remove the "SELAFIN"/"SELAFIND" tag at end (sometime spelled
         // SELAPHIN (with "PH" instead of "F") of SERAFIN (with "R" instead of "L"))
