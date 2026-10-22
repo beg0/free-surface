@@ -7,6 +7,7 @@ use fluent_bundle::FluentValue;
 
 use fluent_i18n::fluent_templates::{LanguageIdentifier, Loader};
 use fluent_langneg::{negotiate_languages, NegotiationStrategy};
+use fluent_message::FluentMessage;
 use unic_langid::langid;
 
 mod units;
@@ -70,6 +71,11 @@ pub fn lookup_with_args(
     args: &HashMap<Cow<'static, str>, FluentValue>,
 ) -> String {
     FREE_SURFACE_LOCALES.lookup_with_args(lang, text_id, args)
+}
+
+/// Look up `text_id` for `lang` in Fluent.
+pub fn lookup_message(lang: &LanguageIdentifier, msg: impl FluentMessage) -> String {
+    FREE_SURFACE_LOCALES.lookup_with_args(lang, msg.msg_id(), &msg.args())
 }
 
 /// Macro to lookup a translation for a given key.
