@@ -538,6 +538,7 @@ dependencies = [
  "fluent-i18n",
  "fluent-langneg",
  "fluent-message",
+ "fluent-templates",
  "fs4",
  "glob",
  "indoc",

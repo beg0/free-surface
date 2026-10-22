@@ -21,6 +21,7 @@ clap = { version = "4.6.1", features = ["derive"] }
 fluent-bundle = "0.16"
 fluent-i18n = "0.1.0"
 fluent-langneg = "0.13"
+fluent-templates = "0.13"
 num-traits = "0.2.19"
 regex = "1.12.3"
 serde = "1.0.228"
