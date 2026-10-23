@@ -41,15 +41,15 @@ impl fmt::Display for DiagnosticLocation {
     }
 }
 
-/// A single parsing diagnostic on a Text-based document.
+/// A single diagnostic.
 ///
 /// A diagnostic carries a [`Severity`], a human-readable `message`
-/// describing the problem, and the [`TextLoc`] pointing to where in the
-/// source document the problem was found.
+/// describing the problem, and the [`DiagnosticLocation`] pointing to
+/// where in the source document the problem was found.
 ///
-/// Collected through [`TextParserDiagnostics`].
+/// Collected through [`Diagnostics`].
 #[derive(Debug)]
-pub struct TextParserDiagnostic {
+pub struct Diagnostic {
     /// How severe the diagnostic is (error, warning or hint).
     pub severity: Severity,
 
@@ -60,7 +60,7 @@ pub struct TextParserDiagnostic {
     pub loc: DiagnosticLocation,
 }
 
-impl TextParserDiagnostic {
+impl Diagnostic {
     /// Add [TextLoc] info to a diagnostic
     /// # Parameters
     /// - `loc`: location in the document where the diagnostic is.
@@ -76,7 +76,7 @@ impl TextParserDiagnostic {
     }
 }
 
-/// A diagnostic collector for Text-based document parsing
+/// Diagnostic collector
 ///
 /// Diagnostics are appended via [`error`](Self::error),
 /// [`warning`](Self::warning) and [`hint`](Self::hint) while parsing
@@ -85,9 +85,9 @@ impl TextParserDiagnostic {
 /// [`has_errors`](Self::has_errors), without having to walk the full list
 /// of diagnostics.
 #[derive(Default, Debug)]
-pub struct TextParserDiagnostics {
+pub struct Diagnostics {
     /// All diagnostics reported so far, in report order.
-    items: Vec<TextParserDiagnostic>,
+    items: Vec<Diagnostic>,
 
     /// Number of error encountered.
     error_count: usize,
@@ -96,7 +96,7 @@ pub struct TextParserDiagnostics {
     warn_count: usize,
 }
 
-impl TextParserDiagnostics {
+impl Diagnostics {
     /// Report an error at the given location.
     ///
     /// An error is to be emitted when the caller encounter an error or an
@@ -107,9 +107,9 @@ impl TextParserDiagnostics {
     ///
     /// # Parameters
     /// - `message`: description of the error.
-    pub fn error(&mut self, message: impl FluentMessage) -> &mut TextParserDiagnostic {
+    pub fn error(&mut self, message: impl FluentMessage) -> &mut Diagnostic {
         self.error_count += 1;
-        self.items.push_mut(TextParserDiagnostic {
+        self.items.push_mut(Diagnostic {
             severity: Severity::Error,
             message: fluent_message_to_string(message),
             loc: DiagnosticLocation::None,
@@ -129,9 +129,9 @@ impl TextParserDiagnostics {
     ///
     /// # Parameters
     /// - `message`: description of the warning.
-    pub fn warning(&mut self, message: impl FluentMessage) -> &mut TextParserDiagnostic {
+    pub fn warning(&mut self, message: impl FluentMessage) -> &mut Diagnostic {
         self.warn_count += 1;
-        self.items.push_mut(TextParserDiagnostic {
+        self.items.push_mut(Diagnostic {
             severity: Severity::Warning,
             message: fluent_message_to_string(message),
             loc: DiagnosticLocation::None,
@@ -146,8 +146,8 @@ impl TextParserDiagnostics {
     ///
     /// # Parameters
     /// - `message`: description of the hint.
-    pub fn hint(&mut self, message: impl FluentMessage) -> &mut TextParserDiagnostic {
-        self.items.push_mut(TextParserDiagnostic {
+    pub fn hint(&mut self, message: impl FluentMessage) -> &mut Diagnostic {
+        self.items.push_mut(Diagnostic {
             severity: Severity::Hint,
             message: fluent_message_to_string(message),
             loc: DiagnosticLocation::None,
@@ -163,14 +163,14 @@ impl TextParserDiagnostics {
     /// # Examples
     /// ```
     /// use free_surface::config::textloc::TextLoc;
-    /// use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
+    /// use free_surface::aui::diagnostic::collector::Diagnostics;
     /// use fluent_message::FluentMessage;
     ///
     /// #[derive(FluentMessage)]
     /// struct WarningMessage {
     /// }
     ///
-    /// let mut diag = TextParserDiagnostics::default();
+    /// let mut diag = Diagnostics::default();
     /// let loc = TextLoc::from(("a_file.txt", 42));
     /// diag.warning(WarningMessage {})
     ///     .with_textloc(loc);
@@ -200,11 +200,11 @@ impl TextParserDiagnostics {
     /// Diagnostics are reported in the order they were
     /// added (errors, warnings and hints mixed together).
     #[must_use]
-    pub fn all(&self) -> &[TextParserDiagnostic] {
+    pub fn all(&self) -> &[Diagnostic] {
         &self.items
     }
 
-    /// Helper to forge a [`TextParserDiagnostics`] containing a single
+    /// Helper to forge a [`Diagnostics`] containing a single
     /// error.
     ///
     /// Equivalent to creating a default collector and calling
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn default_diagnostics_is_empty() {
-        let diag = TextParserDiagnostics::default();
+        let diag = Diagnostics::default();
 
         assert!(diag.all().is_empty());
         assert_eq!(diag.error_count(false), 0);
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn error_is_recorded() {
-        let mut diag = TextParserDiagnostics::default();
+        let mut diag = Diagnostics::default();
 
         diag.error(TestMessage::Error {
             arg: "something bad",
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn warning_is_recorded_but_not_counted_as_error_by_default() {
-        let mut diag = TextParserDiagnostics::default();
+        let mut diag = Diagnostics::default();
         diag.warning(TestMessage::Warning { arg: "careful" })
             .with_textloc(loc2());
 
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn hint_is_recorded_but_never_counted_as_error() {
-        let mut diag = TextParserDiagnostics::default();
+        let mut diag = Diagnostics::default();
         diag.hint(TestMessage::Hint { arg: "fyi" })
             .with_textloc(loc1());
 
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn mixed_diagnostics_counts_and_preserves_order() {
-        let mut diag = TextParserDiagnostics::default();
+        let mut diag = Diagnostics::default();
         diag.error(TestMessage::Error { arg: "e1" })
             .with_textloc(loc1());
         diag.warning(TestMessage::Warning { arg: "w1" })
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn diags_with_filename() {
-        let mut diag = TextParserDiagnostics::default();
+        let mut diag = Diagnostics::default();
 
         diag.error(TestMessage::Error {
             arg: "something bad",
@@ -416,8 +416,7 @@ mod tests {
     }
     #[test]
     fn from_single_error_builds_expected_state() {
-        let diag =
-            TextParserDiagnostics::from_single_error(TestMessage::Error { arg: "boom" }, loc1());
+        let diag = Diagnostics::from_single_error(TestMessage::Error { arg: "boom" }, loc1());
 
         assert_eq!(diag.all().len(), 1);
         assert_eq!(diag.all()[0].severity, Severity::Error);
@@ -428,7 +427,7 @@ mod tests {
 
     #[test]
     fn only_warnings_does_not_trigger_has_errors_without_warn_as_error() {
-        let mut diag = TextParserDiagnostics::default();
+        let mut diag = Diagnostics::default();
         diag.warning(TestMessage::Warning { arg: "w1" })
             .with_textloc(loc1());
         diag.warning(TestMessage::Warning { arg: "w2" })

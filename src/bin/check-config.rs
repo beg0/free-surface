@@ -12,9 +12,9 @@ use clap::Parser;
 use free_surface::{set_locale, t};
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
-use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
+use free_surface::aui::diagnostic::collector::Diagnostics;
 use free_surface::aui::diagnostic::reporter::{
-    create_text_diagnostic_renderer, TextDiagnosticsRendererOptions,
+    create_diagnostic_renderer, DiagnosticsRendererOptions,
 };
 use free_surface::aui::{DiagFormat, Format};
 
@@ -328,16 +328,16 @@ fn run(args: &Args) -> Result<usize, Errors> {
     }
 }
 
-fn print_diagnostics(diagnostics: &TextParserDiagnostics, args: &Args) -> Result<(), Errors> {
+fn print_diagnostics(diagnostics: &Diagnostics, args: &Args) -> Result<(), Errors> {
     let stderr = io::stderr();
 
     let options = match args.diagnostics_format {
-        DiagFormat::Terminal => TextDiagnosticsRendererOptions::Terminal {
+        DiagFormat::Terminal => DiagnosticsRendererOptions::Terminal {
             color: args.diagnostics_color,
         },
-        DiagFormat::Json => TextDiagnosticsRendererOptions::Json { pretty: false },
+        DiagFormat::Json => DiagnosticsRendererOptions::Json { pretty: false },
     };
-    let mut renderer = create_text_diagnostic_renderer(stderr.lock(), options);
+    let mut renderer = create_diagnostic_renderer(stderr.lock(), options);
 
     renderer.as_mut().render(diagnostics).map_err(one_err)
 }

@@ -17,7 +17,7 @@ use super::parse_helpers::{
 };
 use super::textloc::TextLoc;
 
-use crate::aui::diagnostic::collector::TextParserDiagnostics;
+use crate::aui::diagnostic::collector::Diagnostics;
 
 #[derive(Debug, FluentMessage)]
 #[fluent(prefix = "cas-parse-diag")]
@@ -55,7 +55,7 @@ struct ParserInternal<'a> {
     dico: &'a dicofile::Dico,
     top_pos: TextLoc,
     result: HashMap<String, ConfigValue>,
-    diag: TextParserDiagnostics,
+    diag: Diagnostics,
 }
 
 impl<'a> Parser<'a> {
@@ -68,24 +68,18 @@ impl<'a> Parser<'a> {
     pub fn parse_file<P: AsRef<Path>>(
         &self,
         filename: P,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    ) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         let file_pos = TextLoc::from((&filename, 0));
 
         let cascontent = std::fs::read_to_string(&filename).map_err(|error| {
-            TextParserDiagnostics::from_single_error(
-                ParseError::ReadFileFailure { error },
-                file_pos.clone(),
-            )
+            Diagnostics::from_single_error(ParseError::ReadFileFailure { error }, file_pos.clone())
         })?;
         self.parse_from_content_and_textloc(cascontent.as_str(), file_pos)
     }
 
     /// Parse a buffer containing the input of a CAS file
     #[allow(dead_code)]
-    pub fn parse(
-        &self,
-        input: &str,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         self.parse_from_content_and_textloc(input, TextLoc::default())
     }
 
@@ -93,12 +87,12 @@ impl<'a> Parser<'a> {
         &self,
         input: &str,
         top_pos: TextLoc,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    ) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         // trash previous results
         let mut internal = ParserInternal {
             dico: self.dico,
             result: HashMap::new(),
-            diag: TextParserDiagnostics::default(),
+            diag: Diagnostics::default(),
             top_pos,
         };
         internal.parse_fields(input);
@@ -122,7 +116,7 @@ impl<'a> Parser<'a> {
     pub fn config_from_content(
         &self,
         input: &str,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    ) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         let mut config = self.parse(input)?;
 
         self.fill_missing_fields(&mut config);
@@ -135,7 +129,7 @@ impl<'a> Parser<'a> {
     pub fn config_from_file<P: AsRef<Path>>(
         &self,
         filename: P,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    ) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         let mut config = self.parse_file(filename)?;
 
         self.fill_missing_fields(&mut config);
@@ -144,7 +138,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> DamoclesParser for ParserInternal<'a> {
-    fn diag(&mut self) -> &mut TextParserDiagnostics {
+    fn diag(&mut self) -> &mut Diagnostics {
         &mut self.diag
     }
 

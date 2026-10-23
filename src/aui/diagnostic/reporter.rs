@@ -1,24 +1,24 @@
-/// # Parser error reporting mechanism
+/// # Error reporting mechanism
 ///
-/// This module offers a way to create a reporting function for [TextParserDiagnostics]
+/// This module offers a way to create a reporting function for [Diagnostics]
 ///
 use anstream::stream::{AsLockedWrite, RawStream};
 use clap::ColorChoice;
 
-use super::collector::TextParserDiagnostics;
+use super::collector::Diagnostics;
 
 use crate::aui::helpers::color_choice_to_stream;
 
 mod json;
 mod terminal;
 
-pub trait TextDiagnosticsRenderer {
-    /// Display [TextParserDiagnostics] to outside world
-    fn render(&mut self, diagnostics: &TextParserDiagnostics) -> Result<(), std::io::Error>;
+pub trait DiagnosticsRenderer {
+    /// Display [Diagnostics] to outside world
+    fn render(&mut self, diagnostics: &Diagnostics) -> Result<(), std::io::Error>;
 }
 
-/// Options to create a [TextDiagnosticsRenderer] via [create_text_diagnostic_renderer]
-pub enum TextDiagnosticsRendererOptions {
+/// Options to create a [DiagnosticsRenderer] via [create_diagnostic_renderer]
+pub enum DiagnosticsRendererOptions {
     Terminal { color: ColorChoice },
     Json { pretty: bool },
 }
@@ -28,8 +28,8 @@ pub enum TextDiagnosticsRendererOptions {
 /// # Example
 /// ```
 /// use free_surface::config::textloc::TextLoc;
-/// use free_surface::aui::diagnostic::collector::TextParserDiagnostics;
-/// use free_surface::aui::diagnostic::reporter::{TextDiagnosticsRendererOptions, create_text_diagnostic_renderer};
+/// use free_surface::aui::diagnostic::collector::Diagnostics;
+/// use free_surface::aui::diagnostic::reporter::{DiagnosticsRendererOptions, create_diagnostic_renderer};
 /// use clap::ColorChoice;
 /// use fluent_message::FluentMessage;
 ///
@@ -38,25 +38,25 @@ pub enum TextDiagnosticsRendererOptions {
 /// }
 ///
 /// let mut stdio = std::io::stdout();
-/// let options =  TextDiagnosticsRendererOptions::Terminal { color: ColorChoice::Auto };
-/// let mut renderer = create_text_diagnostic_renderer(stdio, options);
-/// let diagnostics = TextParserDiagnostics::from_single_error(ErrorMessage {}, TextLoc::default());
+/// let options =  DiagnosticsRendererOptions::Terminal { color: ColorChoice::Auto };
+/// let mut renderer = create_diagnostic_renderer(stdio, options);
+/// let diagnostics = Diagnostics::from_single_error(ErrorMessage {}, TextLoc::default());
 /// renderer.as_mut().render(&diagnostics).expect("writing error")
 /// ```
-pub fn create_text_diagnostic_renderer<'a, W>(
+pub fn create_diagnostic_renderer<'a, W>(
     out: W,
-    options: TextDiagnosticsRendererOptions,
-) -> Box<dyn TextDiagnosticsRenderer + 'a>
+    options: DiagnosticsRendererOptions,
+) -> Box<dyn DiagnosticsRenderer + 'a>
 where
     W: RawStream + AsLockedWrite + 'a,
 {
     match options {
-        TextDiagnosticsRendererOptions::Terminal { color } => {
+        DiagnosticsRendererOptions::Terminal { color } => {
             let stream = color_choice_to_stream(out, color);
-            Box::new(terminal::TerminalTextDiagnosticsRenderer::new(stream))
+            Box::new(terminal::TerminalDiagnosticsRenderer::new(stream))
         }
-        TextDiagnosticsRendererOptions::Json { pretty } => {
-            Box::new(json::JsonTextDiagnosticsRenderer::new(out, pretty))
+        DiagnosticsRendererOptions::Json { pretty } => {
+            Box::new(json::JsonDiagnosticsRenderer::new(out, pretty))
         }
     }
 }
@@ -64,7 +64,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aui::diagnostic::collector::TextParserDiagnostics;
+    use crate::aui::diagnostic::collector::Diagnostics;
     use crate::config::textloc::TextLoc;
     use serde_json::json;
 
@@ -74,14 +74,12 @@ mod tests {
     #[derive(fluent_message::FluentMessage)]
     struct TestMessage();
 
-    fn get_rendered_diagnostics(options: TextDiagnosticsRendererOptions) -> String {
+    fn get_rendered_diagnostics(options: DiagnosticsRendererOptions) -> String {
         let mut buf = Vec::with_capacity(128);
-        let mut renderer = create_text_diagnostic_renderer(&mut buf, options);
+        let mut renderer = create_diagnostic_renderer(&mut buf, options);
 
-        let diagnostics = TextParserDiagnostics::from_single_error(
-            TestMessage(),
-            TextLoc::from((BUGGY_FILE, BUGGY_LINE)),
-        );
+        let diagnostics =
+            Diagnostics::from_single_error(TestMessage(), TextLoc::from((BUGGY_FILE, BUGGY_LINE)));
 
         renderer
             .as_mut()
@@ -95,7 +93,7 @@ mod tests {
 
     #[test]
     fn terminal_color_always() {
-        let printed = get_rendered_diagnostics(TextDiagnosticsRendererOptions::Terminal {
+        let printed = get_rendered_diagnostics(DiagnosticsRendererOptions::Terminal {
             color: ColorChoice::Always,
         });
 
@@ -111,7 +109,7 @@ mod tests {
 
     #[test]
     fn terminal_color_never() {
-        let printed = get_rendered_diagnostics(TextDiagnosticsRendererOptions::Terminal {
+        let printed = get_rendered_diagnostics(DiagnosticsRendererOptions::Terminal {
             color: ColorChoice::Never,
         });
 
@@ -121,7 +119,7 @@ mod tests {
 
     #[test]
     fn terminal_color_auto() {
-        let printed = get_rendered_diagnostics(TextDiagnosticsRendererOptions::Terminal {
+        let printed = get_rendered_diagnostics(DiagnosticsRendererOptions::Terminal {
             color: ColorChoice::Auto,
         });
 
@@ -131,8 +129,7 @@ mod tests {
 
     #[test]
     fn json_compact() {
-        let printed =
-            get_rendered_diagnostics(TextDiagnosticsRendererOptions::Json { pretty: false });
+        let printed = get_rendered_diagnostics(DiagnosticsRendererOptions::Json { pretty: false });
 
         let expected = json!([
         {

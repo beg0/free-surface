@@ -32,7 +32,7 @@
 use fluent_message::FluentMessage;
 use std::iter::Iterator;
 
-use crate::aui::diagnostic::collector::TextParserDiagnostics;
+use crate::aui::diagnostic::collector::Diagnostics;
 
 use super::super::textloc::TextLoc;
 use super::locatedchars;
@@ -454,7 +454,7 @@ pub trait DamoclesParser {
     fn cmd(&mut self, cmd: TokenInfo) -> Option<DamoclesCommandStatus>;
 
     /// Report a parsing error
-    fn diag(&mut self) -> &mut TextParserDiagnostics;
+    fn diag(&mut self) -> &mut Diagnostics;
 
     /// Compute TextLoc from a {line, col} pair
     fn loc(&self, pos: (usize, usize)) -> TextLoc;

@@ -93,7 +93,7 @@ fn parse_ok(input: &str) -> HashMap<String, ConfigValue> {
     parser.parse(input).expect("Expected successful parse")
 }
 
-fn parse_err(input: &str) -> TextParserDiagnostics {
+fn parse_err(input: &str) -> Diagnostics {
     let dico = make_dico();
     let parser = Parser::new(&dico);
     parser.parse(input).expect_err("Expected parse diagnostics")

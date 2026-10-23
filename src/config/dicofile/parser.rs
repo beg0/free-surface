@@ -11,7 +11,7 @@ use super::super::parse_helpers::{
     DamoclesCommandStatus, DamoclesError, DamoclesParser, KeywordParseInfo, TokenInfo,
 };
 use super::super::textloc::TextLoc;
-use crate::aui::diagnostic::collector::TextParserDiagnostics;
+use crate::aui::diagnostic::collector::Diagnostics;
 
 use super::dicokeyword::{ChoiceOptionHelp, DicoKeyword, GuiControl, KeywordTextDescription};
 use super::{normalize_keyword_name, Dico, DicoInner, LOCALES};
@@ -74,30 +74,27 @@ pub enum DicoParseError {
 }
 
 /// Parse a Telemac dico file
-pub fn parse_file<P: AsRef<Path>>(filename: P) -> Result<Dico, TextParserDiagnostics> {
+pub fn parse_file<P: AsRef<Path>>(filename: P) -> Result<Dico, Diagnostics> {
     let file_pos = TextLoc::from((&filename, 0));
 
     let content = std::fs::read_to_string(&filename).map_err(|error| {
-        TextParserDiagnostics::from_single_error(
-            DicoParseError::ReadFileFailure { error },
-            file_pos.clone(),
-        )
+        Diagnostics::from_single_error(DicoParseError::ReadFileFailure { error }, file_pos.clone())
     })?;
 
     parse_dico_with_textloc(&content, file_pos)
 }
 
 /// Parse a Telemac dico from a buffer
-pub fn parse(input: &str) -> Result<Dico, TextParserDiagnostics> {
+pub fn parse(input: &str) -> Result<Dico, Diagnostics> {
     parse_dico_with_textloc(input, TextLoc::default())
 }
 
-fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, TextParserDiagnostics> {
+fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, Diagnostics> {
     let mut parser = DicoFieldParser {
         fields: HashMap::new(),
         block_pos: file_pos.clone(),
         file_pos,
-        diag: TextParserDiagnostics::default(),
+        diag: Diagnostics::default(),
         keywords: Vec::new(),
     };
 
@@ -115,7 +112,7 @@ fn parse_dico_with_textloc(input: &str, file_pos: TextLoc) -> Result<Dico, TextP
 fn parse_block(
     fields: &HashMap<String, KeywordParseInfo>,
     block_pos: &TextLoc,
-    diag: &mut TextParserDiagnostics,
+    diag: &mut Diagnostics,
 ) -> Option<DicoKeyword> {
     let mut text_desc: HashMap<String, KeywordTextDescription> = HashMap::new();
     let mut choices_per_local: HashMap<String, Vec<ConfigValue>> = HashMap::new();
@@ -125,7 +122,7 @@ fn parse_block(
     // Get a vector of TokenInfo of exactly `expected_count`
     let get_n = |key: &'static str,
                  expected_count: usize,
-                 diag: &mut TextParserDiagnostics|
+                 diag: &mut Diagnostics|
      -> Option<&Vec<TokenInfo>> {
         let kpi = fields.get(key)?;
         let parse_infos = &kpi.values;
@@ -148,7 +145,7 @@ fn parse_block(
         }
     };
 
-    let get_last = |key: &'static str, diag: &mut TextParserDiagnostics| -> Option<&TokenInfo> {
+    let get_last = |key: &'static str, diag: &mut Diagnostics| -> Option<&TokenInfo> {
         let kpi = fields.get(key)?;
         let parse_infos = &kpi.values;
         if parse_infos.is_empty() {
@@ -171,15 +168,15 @@ fn parse_block(
         }
     };
 
-    let get_one = |key: &'static str, diag: &mut TextParserDiagnostics| -> Option<&TokenInfo> {
+    let get_one = |key: &'static str, diag: &mut Diagnostics| -> Option<&TokenInfo> {
         get_n(key, 1, diag).map(|v| &v[0])
     };
 
-    let get_val_one = |key: &'static str, diag: &mut TextParserDiagnostics| -> Option<String> {
+    let get_val_one = |key: &'static str, diag: &mut Diagnostics| -> Option<String> {
         get_one(key, diag).map(|token_info| token_info.token.clone())
     };
 
-    let require_one = |key: &'static str, diag: &mut TextParserDiagnostics| -> String {
+    let require_one = |key: &'static str, diag: &mut Diagnostics| -> String {
         match get_one(key, diag) {
             Some(token_info) => token_info.token.clone(),
             None => {
@@ -383,7 +380,7 @@ struct DicoFieldParser {
     block_pos: TextLoc,
 
     /// All errors encountered during processing
-    pub diag: TextParserDiagnostics,
+    pub diag: Diagnostics,
 
     /// All keywords already parsed
     keywords: Vec<Rc<DicoKeyword>>,
@@ -416,7 +413,7 @@ const VALID_DICO_KEYS: [&str; 20] = [
 const NEW_BLOCK_KEY: [&str; 2] = ["NOM", "NOM1"];
 
 impl DamoclesParser for DicoFieldParser {
-    fn diag(&mut self) -> &mut TextParserDiagnostics {
+    fn diag(&mut self) -> &mut Diagnostics {
         &mut self.diag
     }
 
@@ -549,7 +546,7 @@ impl DicoFieldParser {
 fn parse_integer_field<T: PrimInt + Default + FromStr>(
     name: &'static str,
     description: Option<&TokenInfo>,
-    diag: &mut TextParserDiagnostics,
+    diag: &mut Diagnostics,
     block_pos: &TextLoc,
 ) -> T
 where
@@ -572,11 +569,7 @@ where
     }
 }
 
-fn parse_controle(
-    min: &TokenInfo,
-    max: &TokenInfo,
-    diag: &mut TextParserDiagnostics,
-) -> Option<(f64, f64)> {
+fn parse_controle(min: &TokenInfo, max: &TokenInfo, diag: &mut Diagnostics) -> Option<(f64, f64)> {
     match (
         min.token.trim().parse::<f64>(),
         max.token.trim().parse::<f64>(),

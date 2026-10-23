@@ -5,23 +5,23 @@ use std::io::Write;
 
 use crate::aui::diagnostic::collector::DiagnosticLocation;
 
+use super::super::collector::Diagnostics;
 use super::super::collector::Severity;
-use super::super::collector::TextParserDiagnostics;
 
-use super::TextDiagnosticsRenderer;
+use super::DiagnosticsRenderer;
 
 use serde::Serialize;
 use serde_json;
 
 /// Renderer for text parsing diagnostics in JSON format
-pub struct JsonTextDiagnosticsRenderer<W: Write> {
+pub struct JsonDiagnosticsRenderer<W: Write> {
     writer: W,
     pretty: bool,
 }
 
-impl<W: Write> TextDiagnosticsRenderer for JsonTextDiagnosticsRenderer<W> {
+impl<W: Write> DiagnosticsRenderer for JsonDiagnosticsRenderer<W> {
     /// Render Text Parser Diagnostics in a machine-readable format
-    fn render(&mut self, diagnostics: &TextParserDiagnostics) -> Result<(), std::io::Error> {
+    fn render(&mut self, diagnostics: &Diagnostics) -> Result<(), std::io::Error> {
         let all_diags: Vec<serde_json::Value> = diagnostics
             .all()
             .iter()
@@ -67,7 +67,7 @@ impl<W: Write> TextDiagnosticsRenderer for JsonTextDiagnosticsRenderer<W> {
     }
 }
 
-impl<W: Write> JsonTextDiagnosticsRenderer<W> {
+impl<W: Write> JsonDiagnosticsRenderer<W> {
     pub fn new(w: W, pretty: bool) -> Self {
         Self { writer: w, pretty }
     }
@@ -76,7 +76,7 @@ impl<W: Write> JsonTextDiagnosticsRenderer<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aui::diagnostic::collector::TextParserDiagnostics;
+    use crate::aui::diagnostic::collector::Diagnostics;
     use crate::config::textloc::TextLoc;
     use serde_json::json;
 
@@ -101,8 +101,8 @@ mod tests {
     #[fluent(id = "test-hint-message")]
     struct TestHintMessage();
 
-    fn sample_diagnostics() -> TextParserDiagnostics {
-        let mut diagnostics = TextParserDiagnostics::default();
+    fn sample_diagnostics() -> Diagnostics {
+        let mut diagnostics = Diagnostics::default();
         diagnostics
             .error(TestErrorMessage())
             .with_textloc(TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)));
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn compact_output_matches_expected_structure() {
         let mut buf = Vec::with_capacity(256);
-        let mut render = JsonTextDiagnosticsRenderer::new(&mut buf, false);
+        let mut render = JsonDiagnosticsRenderer::new(&mut buf, false);
 
         let diagnostics = sample_diagnostics();
         render
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn pretty_output_matches_expected_structure() {
         let mut buf = Vec::with_capacity(256);
-        let mut render = JsonTextDiagnosticsRenderer::new(&mut buf, true);
+        let mut render = JsonDiagnosticsRenderer::new(&mut buf, true);
 
         let diagnostics = sample_diagnostics();
         render
@@ -210,9 +210,9 @@ mod tests {
     #[test]
     fn no_diagnostics_renders_empty_array() {
         let mut buf = Vec::new();
-        let mut render = JsonTextDiagnosticsRenderer::new(&mut buf, false);
+        let mut render = JsonDiagnosticsRenderer::new(&mut buf, false);
 
-        let diagnostics = TextParserDiagnostics::default();
+        let diagnostics = Diagnostics::default();
         render
             .render(&diagnostics)
             .expect("can't render diagnostics");
