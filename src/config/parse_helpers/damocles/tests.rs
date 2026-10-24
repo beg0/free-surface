@@ -2,7 +2,7 @@
 use std::assert_matches;
 
 use super::super::{DamoclesCommandStatus, DamoclesParser, KeywordParseInfo, TokenInfo};
-use crate::aui::diagnostic::collector::{Severity, TextParserDiagnostics};
+use crate::aui::diagnostic::collector::{Diagnostics, Severity};
 use crate::config::textloc::TextLoc;
 
 //-------------------
@@ -15,7 +15,7 @@ use crate::config::textloc::TextLoc;
 struct DamoclesTester {
     fields: Vec<KeywordParseInfo>,
     commands: Vec<TokenInfo>,
-    diag: TextParserDiagnostics,
+    diag: Diagnostics,
 }
 
 impl DamoclesParser for DamoclesTester {
@@ -29,7 +29,7 @@ impl DamoclesParser for DamoclesTester {
         Some(DamoclesCommandStatus::Success) // Todo test error cases
     }
 
-    fn diag(&mut self) -> &mut TextParserDiagnostics {
+    fn diag(&mut self) -> &mut Diagnostics {
         &mut self.diag
     }
 
@@ -53,7 +53,7 @@ fn collect_fields_without_errors(input: &str) -> Vec<KeywordParseInfo> {
 }
 /// Collect all (key, value, loc) triples produced by parse_fields
 /// as well as errors
-fn collect_fields_with_errors(input: &str) -> (Vec<KeywordParseInfo>, TextParserDiagnostics) {
+fn collect_fields_with_errors(input: &str) -> (Vec<KeywordParseInfo>, Diagnostics) {
     let mut tester = DamoclesTester::default();
 
     tester.parse_fields(input);

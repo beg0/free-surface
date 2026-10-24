@@ -1,25 +1,27 @@
-// #! Render text parsing diagnostics in JSON format
+// #! Render parsing diagnostics in JSON format
 
 use std::collections::HashMap;
 use std::io::Write;
 
-use super::super::super::collector::Severity;
-use super::super::super::collector::TextParserDiagnostics;
+use crate::aui::diagnostic::collector::DiagnosticLocation;
 
-use super::TextDiagnosticsRenderer;
+use super::super::collector::Diagnostics;
+use super::super::collector::Severity;
+
+use super::DiagnosticsRenderer;
 
 use serde::Serialize;
 use serde_json;
 
 /// Renderer for text parsing diagnostics in JSON format
-pub struct JsonTextDiagnosticsRenderer<W: Write> {
+pub struct JsonDiagnosticsRenderer<W: Write> {
     writer: W,
     pretty: bool,
 }
 
-impl<W: Write> TextDiagnosticsRenderer for JsonTextDiagnosticsRenderer<W> {
+impl<W: Write> DiagnosticsRenderer for JsonDiagnosticsRenderer<W> {
     /// Render Text Parser Diagnostics in a machine-readable format
-    fn render(&mut self, diagnostics: &TextParserDiagnostics) -> Result<(), std::io::Error> {
+    fn render(&mut self, diagnostics: &Diagnostics) -> Result<(), std::io::Error> {
         let all_diags: Vec<serde_json::Value> = diagnostics
             .all()
             .iter()
@@ -29,12 +31,18 @@ impl<W: Write> TextDiagnosticsRenderer for JsonTextDiagnosticsRenderer<W> {
                     Severity::Warning => "warning",
                     Severity::Hint => "hint",
                 };
-                let mut location: HashMap<&str, serde_json::Value> = HashMap::new();
-                location.insert("filename", serde_json::to_value(d.loc.filename())?);
-                location.insert("line", serde_json::to_value(d.loc.line())?);
-                location.insert("column", serde_json::to_value(d.loc.column())?);
-
-                let locations = vec![location];
+                let mut locations: Vec<serde_json::Value> = Vec::with_capacity(1);
+                match &d.loc {
+                    DiagnosticLocation::TextLoc(loc) => {
+                        locations.push(serde_json::to_value(loc)?);
+                    }
+                    DiagnosticLocation::Filename(filename) => {
+                        locations.push(serde_json::json!({
+                            "filename": filename
+                        }));
+                    }
+                    DiagnosticLocation::None => {}
+                }
 
                 let mut root: HashMap<&str, serde_json::Value> = HashMap::new();
 
@@ -59,7 +67,7 @@ impl<W: Write> TextDiagnosticsRenderer for JsonTextDiagnosticsRenderer<W> {
     }
 }
 
-impl<W: Write> JsonTextDiagnosticsRenderer<W> {
+impl<W: Write> JsonDiagnosticsRenderer<W> {
     pub fn new(w: W, pretty: bool) -> Self {
         Self { writer: w, pretty }
     }
@@ -68,7 +76,7 @@ impl<W: Write> JsonTextDiagnosticsRenderer<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aui::diagnostic::collector::TextParserDiagnostics;
+    use crate::aui::diagnostic::collector::Diagnostics;
     use crate::config::textloc::TextLoc;
     use serde_json::json;
 
@@ -93,20 +101,17 @@ mod tests {
     #[fluent(id = "test-hint-message")]
     struct TestHintMessage();
 
-    fn sample_diagnostics() -> TextParserDiagnostics {
-        let mut diagnostics = TextParserDiagnostics::default();
-        diagnostics.error(
-            TestErrorMessage(),
-            TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)),
-        );
-        diagnostics.warning(
-            TestWarningMessage(),
-            TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)),
-        );
-        diagnostics.hint(
-            TestHintMessage(),
-            TextLoc::from((FILE_WITH_HINT, HINT_LINE)),
-        );
+    fn sample_diagnostics() -> Diagnostics {
+        let mut diagnostics = Diagnostics::default();
+        diagnostics
+            .error(TestErrorMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)));
+        diagnostics
+            .warning(TestWarningMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)));
+        diagnostics
+            .hint(TestHintMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_HINT, HINT_LINE)));
         diagnostics
     }
 
@@ -157,7 +162,7 @@ mod tests {
     #[test]
     fn compact_output_matches_expected_structure() {
         let mut buf = Vec::with_capacity(256);
-        let mut render = JsonTextDiagnosticsRenderer::new(&mut buf, false);
+        let mut render = JsonDiagnosticsRenderer::new(&mut buf, false);
 
         let diagnostics = sample_diagnostics();
         render
@@ -181,7 +186,7 @@ mod tests {
     #[test]
     fn pretty_output_matches_expected_structure() {
         let mut buf = Vec::with_capacity(256);
-        let mut render = JsonTextDiagnosticsRenderer::new(&mut buf, true);
+        let mut render = JsonDiagnosticsRenderer::new(&mut buf, true);
 
         let diagnostics = sample_diagnostics();
         render
@@ -205,9 +210,9 @@ mod tests {
     #[test]
     fn no_diagnostics_renders_empty_array() {
         let mut buf = Vec::new();
-        let mut render = JsonTextDiagnosticsRenderer::new(&mut buf, false);
+        let mut render = JsonDiagnosticsRenderer::new(&mut buf, false);
 
-        let diagnostics = TextParserDiagnostics::default();
+        let diagnostics = Diagnostics::default();
         render
             .render(&diagnostics)
             .expect("can't render diagnostics");

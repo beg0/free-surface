@@ -2,12 +2,12 @@
 
 use std::io::Write;
 
-use super::super::super::collector::Severity;
-use super::super::super::collector::TextParserDiagnostics;
+use super::super::collector::Severity;
+use super::super::collector::{DiagnosticLocation, Diagnostics};
 use crate::t;
 use anstyle::{AnsiColor, Effects, Style};
 
-use super::TextDiagnosticsRenderer;
+use super::DiagnosticsRenderer;
 
 /// How to colorize some part of the output
 struct Palette {
@@ -44,18 +44,23 @@ impl Palette {
 /// It output colorized text. Use [anstream::AutoStream]
 /// to filter colors if needed.
 ///
-pub struct TerminalTextDiagnosticsRenderer<W: Write> {
+pub struct TerminalDiagnosticsRenderer<W: Write> {
     writer: W,
 }
 
-impl<W: Write> TextDiagnosticsRenderer for TerminalTextDiagnosticsRenderer<W> {
-    fn render(&mut self, diagnostics: &TextParserDiagnostics) -> Result<(), std::io::Error> {
+impl<W: Write> DiagnosticsRenderer for TerminalDiagnosticsRenderer<W> {
+    fn render(&mut self, diagnostics: &Diagnostics) -> Result<(), std::io::Error> {
         let palette = Palette::colored();
 
         for d in diagnostics.all() {
-            palette.textloc.write_to(&mut self.writer)?;
-            write!(self.writer, "{}:", d.loc)?;
-            palette.textloc.write_reset_to(&mut self.writer)?;
+            match d.loc {
+                DiagnosticLocation::Filename(_) | DiagnosticLocation::TextLoc(_) => {
+                    palette.textloc.write_to(&mut self.writer)?;
+                    write!(self.writer, "{}:", d.loc)?;
+                    palette.textloc.write_reset_to(&mut self.writer)?;
+                }
+                DiagnosticLocation::None => {}
+            }
             write!(self.writer, " ")?;
 
             self.render_severity(&d.severity, &palette)?;
@@ -67,7 +72,7 @@ impl<W: Write> TextDiagnosticsRenderer for TerminalTextDiagnosticsRenderer<W> {
     }
 }
 
-impl<W: Write> TerminalTextDiagnosticsRenderer<W> {
+impl<W: Write> TerminalDiagnosticsRenderer<W> {
     pub fn new(w: W) -> Self {
         Self { writer: w }
     }
@@ -80,17 +85,17 @@ impl<W: Write> TerminalTextDiagnosticsRenderer<W> {
         match severity {
             Severity::Error => {
                 palette.error.write_to(&mut self.writer)?;
-                write!(self.writer, "{}:", t!("text-diag-label-error"))?;
+                write!(self.writer, "{}:", t!("diag-label-error"))?;
                 palette.error.write_reset_to(&mut self.writer)?;
             }
             Severity::Warning => {
                 palette.warning.write_to(&mut self.writer)?;
-                write!(self.writer, "{}:", t!("text-diag-label-warning"))?;
+                write!(self.writer, "{}:", t!("diag-label-warning"))?;
                 palette.warning.write_reset_to(&mut self.writer)?;
             }
             Severity::Hint => {
                 palette.hint.write_to(&mut self.writer)?;
-                write!(self.writer, "{}:", t!("text-diag-label-hint"))?;
+                write!(self.writer, "{}:", t!("diag-label-hint"))?;
                 palette.hint.write_reset_to(&mut self.writer)?;
             }
         }
@@ -101,7 +106,7 @@ impl<W: Write> TerminalTextDiagnosticsRenderer<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aui::diagnostic::collector::TextParserDiagnostics;
+    use crate::aui::diagnostic::collector::Diagnostics;
     use crate::config::textloc::TextLoc;
 
     const FILE_WITH_ERROR: &str = "corrupted_file.txt";
@@ -125,20 +130,17 @@ mod tests {
     #[fluent(id = "test-hint-message")]
     struct TestHintMessage();
 
-    fn sample_diagnostics() -> TextParserDiagnostics {
-        let mut diagnostics = TextParserDiagnostics::default();
-        diagnostics.error(
-            TestErrorMessage(),
-            TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)),
-        );
-        diagnostics.warning(
-            TestWarningMessage(),
-            TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)),
-        );
-        diagnostics.hint(
-            TestHintMessage(),
-            TextLoc::from((FILE_WITH_HINT, HINT_LINE)),
-        );
+    fn sample_diagnostics() -> Diagnostics {
+        let mut diagnostics = Diagnostics::default();
+        diagnostics
+            .error(TestErrorMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_ERROR, ERROR_LINE)));
+        diagnostics
+            .warning(TestWarningMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_WARNING, WARNING_LINE)));
+        diagnostics
+            .hint(TestHintMessage())
+            .with_textloc(TextLoc::from((FILE_WITH_HINT, HINT_LINE)));
         diagnostics
     }
 
@@ -146,7 +148,7 @@ mod tests {
     fn basic() {
         let mut buf = Vec::with_capacity(128);
 
-        let mut render = TerminalTextDiagnosticsRenderer::new(&mut buf);
+        let mut render = TerminalDiagnosticsRenderer::new(&mut buf);
 
         let diagnostics = sample_diagnostics();
         render.render(&diagnostics).expect("can't render msg");
@@ -188,9 +190,9 @@ mod tests {
     #[test]
     fn no_diagnostics_renders_empty_string() {
         let mut buf = Vec::new();
-        let mut render = TerminalTextDiagnosticsRenderer::new(&mut buf);
+        let mut render = TerminalDiagnosticsRenderer::new(&mut buf);
 
-        let diagnostics = TextParserDiagnostics::default();
+        let diagnostics = Diagnostics::default();
         render
             .render(&diagnostics)
             .expect("can't render diagnostics");

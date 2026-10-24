@@ -322,16 +322,13 @@ fn render_history(e: &mut dyn ConfigViewer, slf: &Selafin, query: &HistoryQuery)
         process::exit(1);
     }
 
-    let ve = match ts.get_var(&query.variable) {
-        Some(v) => v,
-        None => {
-            eprintln!("error: variable '{}' not found in file", query.variable);
-            eprintln!("available variables:");
-            for (name, _) in ts.iter_vars() {
-                eprintln!("  {name}");
-            }
-            process::exit(1);
+    let Some(ve) = ts.get_var(&query.variable) else {
+        eprintln!("error: variable '{}' not found in file", query.variable);
+        eprintln!("available variables:");
+        for (name, _) in ts.iter_vars() {
+            eprintln!("  {name}");
         }
+        process::exit(1);
     };
 
     let values = &ve.values[query.time_index];

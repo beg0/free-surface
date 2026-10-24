@@ -17,7 +17,7 @@ use super::parse_helpers::{
 };
 use super::textloc::TextLoc;
 
-use crate::aui::diagnostic::collector::TextParserDiagnostics;
+use crate::aui::diagnostic::collector::Diagnostics;
 
 #[derive(Debug, FluentMessage)]
 #[fluent(prefix = "cas-parse-diag")]
@@ -55,7 +55,7 @@ struct ParserInternal<'a> {
     dico: &'a dicofile::Dico,
     top_pos: TextLoc,
     result: HashMap<String, ConfigValue>,
-    diag: TextParserDiagnostics,
+    diag: Diagnostics,
 }
 
 impl<'a> Parser<'a> {
@@ -68,24 +68,18 @@ impl<'a> Parser<'a> {
     pub fn parse_file<P: AsRef<Path>>(
         &self,
         filename: P,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    ) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         let file_pos = TextLoc::from((&filename, 0));
 
         let cascontent = std::fs::read_to_string(&filename).map_err(|error| {
-            TextParserDiagnostics::from_single_error(
-                ParseError::ReadFileFailure { error },
-                file_pos.clone(),
-            )
+            Diagnostics::from_single_error(ParseError::ReadFileFailure { error }, file_pos.clone())
         })?;
         self.parse_from_content_and_textloc(cascontent.as_str(), file_pos)
     }
 
     /// Parse a buffer containing the input of a CAS file
     #[allow(dead_code)]
-    pub fn parse(
-        &self,
-        input: &str,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    pub fn parse(&self, input: &str) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         self.parse_from_content_and_textloc(input, TextLoc::default())
     }
 
@@ -93,12 +87,12 @@ impl<'a> Parser<'a> {
         &self,
         input: &str,
         top_pos: TextLoc,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    ) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         // trash previous results
         let mut internal = ParserInternal {
             dico: self.dico,
             result: HashMap::new(),
-            diag: TextParserDiagnostics::default(),
+            diag: Diagnostics::default(),
             top_pos,
         };
         internal.parse_fields(input);
@@ -122,7 +116,7 @@ impl<'a> Parser<'a> {
     pub fn config_from_content(
         &self,
         input: &str,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    ) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         let mut config = self.parse(input)?;
 
         self.fill_missing_fields(&mut config);
@@ -135,7 +129,7 @@ impl<'a> Parser<'a> {
     pub fn config_from_file<P: AsRef<Path>>(
         &self,
         filename: P,
-    ) -> Result<HashMap<String, ConfigValue>, TextParserDiagnostics> {
+    ) -> Result<HashMap<String, ConfigValue>, Diagnostics> {
         let mut config = self.parse_file(filename)?;
 
         self.fill_missing_fields(&mut config);
@@ -144,7 +138,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> DamoclesParser for ParserInternal<'a> {
-    fn diag(&mut self) -> &mut TextParserDiagnostics {
+    fn diag(&mut self) -> &mut Diagnostics {
         &mut self.diag
     }
 
@@ -172,7 +166,8 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             }
             "STO" => {
                 self.diag
-                    .error(DamoclesError::StopCommand { cmd: cmd.token }, cmd.start_pos);
+                    .error(DamoclesError::StopCommand { cmd: cmd.token })
+                    .with_textloc(cmd.start_pos);
                 return None;
             }
             "FIN" => {
@@ -182,10 +177,9 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
                 eprintln!("cmd DOC is deprecated");
             }
             _ => {
-                self.diag.error(
-                    DamoclesError::UnknownCommand { cmd: cmd.token },
-                    cmd.start_pos,
-                );
+                self.diag
+                    .error(DamoclesError::UnknownCommand { cmd: cmd.token })
+                    .with_textloc(cmd.start_pos);
                 return None;
             }
         };
@@ -199,12 +193,11 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
 
     fn new_field(&mut self, mut kpi: KeywordParseInfo) {
         let Some(keyword) = self.dico.get(kpi.keyname()) else {
-            self.diag.error(
-                ParseError::UnknownKey {
+            self.diag
+                .error(ParseError::UnknownKey {
                     key: kpi.key.token.clone(),
-                },
-                kpi.key.start_pos.clone(),
-            );
+                })
+                .with_textloc(kpi.key.start_pos.clone());
             return;
         };
 
@@ -218,13 +211,12 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             Ok(v) => v,
             Err(errors) => {
                 for (entry, reason) in errors {
-                    self.diag.error(
-                        ParseError::InvalidValue {
+                    self.diag
+                        .error(ParseError::InvalidValue {
                             key: kpi.key.token.clone(),
                             reason,
-                        },
-                        entry.start_pos.clone(),
-                    );
+                        })
+                        .with_textloc(entry.start_pos.clone());
                 }
                 return;
             }
@@ -235,15 +227,14 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             let nb_of_failures = failures.len();
             for failed_index in failures {
                 if let Some(failed_value) = value_parse_infos.get(failed_index) {
-                    self.diag.error(
-                        ParseError::OutOfBound {
+                    self.diag
+                        .error(ParseError::OutOfBound {
                             key: kpi.key.token.clone(),
                             value: failed_value.token.clone(),
                             min: boundaries.0,
                             max: boundaries.1,
-                        },
-                        failed_value.start_pos.clone(),
-                    );
+                        })
+                        .with_textloc(failed_value.start_pos.clone());
                 }
             }
             if nb_of_failures > 0 {
@@ -256,14 +247,13 @@ impl<'a> DamoclesParser for ParserInternal<'a> {
             Err(failures) => {
                 for (failed_index, reason) in failures {
                     if let Some(failed_value) = value_parse_infos.get(failed_index) {
-                        self.diag.error(
-                            ParseError::BadChoice {
+                        self.diag
+                            .error(ParseError::BadChoice {
                                 key: kpi.key.token.clone(),
                                 value: failed_value.token.clone(),
                                 reason,
-                            },
-                            failed_value.start_pos.clone(),
-                        );
+                            })
+                            .with_textloc(failed_value.start_pos.clone());
                     }
                 }
                 return;
