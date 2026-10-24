@@ -8,13 +8,18 @@ use std::str::FromStr;
 use std::{process, vec};
 
 use clap::Parser;
+use free_surface::aui::diagnostic::collector::Diagnostics;
+use free_surface::aui::diagnostic::reporter::{
+    create_diagnostic_renderer, DiagnosticsRenderer, DiagnosticsRendererOptions,
+};
 use serde_json::json;
 use serde_json::value::Value as JsonValue;
 
 use free_surface::aui::configviewer::{create_config_viewer, ConfigViewer, ConfigViewerOptions};
+
 use free_surface::set_locale;
 
-use free_surface::aui::Format;
+use free_surface::aui::{DiagFormat, Format};
 use free_surface::storage::selafin::{parse_file, Selafin};
 
 // ---------------------------------------------------------------------------
@@ -59,6 +64,56 @@ struct Args {
     /// Colorize the output
     #[arg(long, default_value_t=clap::ColorChoice::Auto)]
     color: clap::ColorChoice,
+
+    /// How diagnostics are rendered
+    #[arg(long, value_enum, default_value_t=DiagFormat::Terminal)]
+    diagnostics_format: DiagFormat,
+
+    /// Use color in diagnostics
+    #[arg(long, default_value_t=clap::ColorChoice::Auto)]
+    diagnostics_color: clap::ColorChoice,
+}
+
+// ---------------------------------------------------------------------------
+// Error managements
+// ---------------------------------------------------------------------------
+
+#[derive(fluent_message::FluentMessage)]
+enum SlfDumpDiagnostic {
+    MissingShowOption,
+    RunHelp,
+    FileParsingFailure {
+        #[fluent(display)]
+        error: binrw::Error,
+    },
+    TimeIndexOutOfRange {
+        time: usize,
+        step_count: usize,
+    },
+    NoSuchVariable {
+        variable: String,
+    },
+    AvailableVariables {
+        variables: String,
+    },
+    NoSuchLayer {
+        requested: usize,
+        actual: usize,
+    },
+}
+
+fn print_diagnostics(diagnostics: &Diagnostics, args: &Args) -> Result<(), std::io::Error> {
+    let stderr = io::stderr();
+
+    let options = match args.diagnostics_format {
+        DiagFormat::Terminal => DiagnosticsRendererOptions::Terminal {
+            color: args.diagnostics_color,
+        },
+        DiagFormat::Json => DiagnosticsRendererOptions::Json { pretty: false },
+    };
+    let mut renderer = create_diagnostic_renderer(stderr.lock(), options);
+
+    renderer.as_mut().render(diagnostics)
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +178,15 @@ fn get_config_viewer_options(args: &Args) -> ConfigViewerOptions {
             pretty: !args.compact,
         },
         Format::Machine => ConfigViewerOptions::Machine,
+    }
+}
+
+fn get_diag_render_options(args: &Args) -> DiagnosticsRendererOptions {
+    match args.diagnostics_format {
+        DiagFormat::Terminal => DiagnosticsRendererOptions::Terminal {
+            color: args.diagnostics_color,
+        },
+        DiagFormat::Json => DiagnosticsRendererOptions::Json { pretty: false },
     }
 }
 
@@ -208,7 +272,13 @@ fn render_variables(e: &mut dyn ConfigViewer, slf: &Selafin, with_units: bool) {
     e.emit_section_end();
 }
 
-fn render_points(e: &mut dyn ConfigViewer, slf: &Selafin, layer: Option<usize>) {
+fn render_points(
+    e: &mut dyn ConfigViewer,
+    slf: &Selafin,
+    layer: Option<usize>,
+    diag: &mut Diagnostics,
+    filename: &String,
+) {
     let geo = slf.geometry();
     let section_name = match layer {
         Some(n) => format!("points:layer={n}"),
@@ -225,11 +295,12 @@ fn render_points(e: &mut dyn ConfigViewer, slf: &Selafin, layer: Option<usize>) 
             let start = n * ppl;
             let end = start + ppl;
             if end > xs.len() {
-                eprintln!(
-                    "error: layer {n} does not exist (file has {} layers)",
-                    geo.planes_cnt()
-                );
-                process::exit(1);
+                diag.error(SlfDumpDiagnostic::NoSuchLayer {
+                    requested: n,
+                    actual: geo.planes_cnt() as usize,
+                })
+                .with_filename(filename);
+                return;
             }
             (&xs[start..end], &ys[start..end])
         }
@@ -245,13 +316,18 @@ fn render_points(e: &mut dyn ConfigViewer, slf: &Selafin, layer: Option<usize>) 
     e.emit_section_end();
 }
 
-fn render_elements(e: &mut dyn ConfigViewer, slf: &Selafin, layer: Option<usize>) {
+fn render_elements(
+    e: &mut dyn ConfigViewer,
+    slf: &Selafin,
+    layer: Option<usize>,
+    diag: &mut Diagnostics,
+    filename: &String,
+) {
     let geo = slf.geometry();
     let section_name = match layer {
         Some(n) => format!("elements:layer={n}"),
         None => "elements".to_string(),
     };
-    e.emit_section_start(&section_name);
 
     let npd2 = geo.point_per_layer_element();
     let point_names: Vec<String> = (0..npd2).map(|i| format!("n{i}")).collect();
@@ -262,16 +338,19 @@ fn render_elements(e: &mut dyn ConfigViewer, slf: &Selafin, layer: Option<usize>
     let layers_to_show: Vec<usize> = match layer {
         Some(n) => {
             if n >= geo.planes_cnt() as usize {
-                eprintln!(
-                    "error: layer {n} does not exist (file has {} layers)",
-                    geo.planes_cnt()
-                );
-                process::exit(1);
+                diag.error(SlfDumpDiagnostic::NoSuchLayer {
+                    requested: n,
+                    actual: geo.planes_cnt() as usize,
+                })
+                .with_filename(filename);
+                return;
             }
             vec![n]
         }
         None => (0..geo.planes_cnt() as usize).collect(),
     };
+
+    e.emit_section_start(&section_name);
 
     let mut rows: Vec<Vec<JsonValue>> = Vec::new();
     for l in layers_to_show {
@@ -308,28 +387,45 @@ fn render_results(e: &mut dyn ConfigViewer, slf: &Selafin) {
     e.emit_section_end();
 }
 
-fn render_history(e: &mut dyn ConfigViewer, slf: &Selafin, query: &HistoryQuery) {
+fn render_history(
+    e: &mut dyn ConfigViewer,
+    slf: &Selafin,
+    query: &HistoryQuery,
+    diag: &mut Diagnostics,
+    filename: &String,
+) {
     let ts = slf.results();
-    let section_name = format!("history:{}:{}", query.variable, query.time_index);
-    e.emit_section_start(&section_name);
 
     if query.time_index >= ts.step_count() {
-        eprintln!(
-            "error: time index {} out of range (file has {} steps)",
-            query.time_index,
-            ts.step_count()
-        );
-        process::exit(1);
+        diag.error(SlfDumpDiagnostic::TimeIndexOutOfRange {
+            time: query.time_index,
+            step_count: ts.step_count(),
+        })
+        .with_filename(filename);
+        return;
     }
 
     let Some(ve) = ts.get_var(&query.variable) else {
-        eprintln!("error: variable '{}' not found in file", query.variable);
-        eprintln!("available variables:");
-        for (name, _) in ts.iter_vars() {
-            eprintln!("  {name}");
-        }
-        process::exit(1);
+        diag.error(SlfDumpDiagnostic::NoSuchVariable {
+            variable: query.variable.clone(),
+        })
+        .with_filename(filename);
+
+        let available_variables = ts
+            .iter_vars()
+            .map(|(name, _)| format!("  - {name}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        diag.hint(SlfDumpDiagnostic::AvailableVariables {
+            variables: available_variables,
+        })
+        .with_filename(filename);
+        return;
     };
+
+    let section_name = format!("history:{}:{}", query.variable, query.time_index);
+    e.emit_section_start(&section_name);
 
     let values = &ve.values[query.time_index];
     let rows: Vec<Vec<JsonValue>> = match values {
@@ -364,22 +460,42 @@ fn main() -> ExitCode {
     let tokens: &Vec<ShowToken> = &args.show;
     let history_queries: &Vec<HistoryQuery> = &args.history;
 
+    let stdout = io::stdout();
+    let stderr = io::stderr();
+
+    let mut renderer = create_config_viewer(stdout.lock(), get_config_viewer_options(&args));
+    let mut diag_render = create_diagnostic_renderer(stderr.lock(), get_diag_render_options(&args));
+
     if tokens.is_empty() && history_queries.is_empty() {
-        eprintln!("nothing to show - use --show and/or --history");
-        eprintln!("run with --help for usage");
+        let mut diagnostics = Diagnostics::default();
+        diagnostics.error(SlfDumpDiagnostic::MissingShowOption);
+        diagnostics.hint(SlfDumpDiagnostic::RunHelp);
+        print_diagnostics(&diagnostics, &args).expect("Fail to render diagnostics");
         process::exit(1);
     }
 
     // Parse the file
-    let slf = parse_file(&args.file).unwrap_or_else(|e| {
-        eprintln!("error: failed to parse '{}': {e}", args.file.display());
+    let slf = parse_file(&args.file).unwrap_or_else(|error| {
+        let mut diagnostics = Diagnostics::default();
+        diagnostics
+            .error(SlfDumpDiagnostic::FileParsingFailure { error })
+            .with_filename(args.file.to_string_lossy());
+        print_diagnostics(&diagnostics, &args).expect("Fail to render diagnostics");
         process::exit(1);
     });
 
-    let stdout = io::stdout();
-    let mut renderer = create_config_viewer(stdout.lock(), get_config_viewer_options(&args));
+    match run_sections(
+        renderer.as_mut(),
+        diag_render.as_mut(),
+        &slf,
+        tokens,
+        history_queries,
+        &args.file.to_string_lossy().to_string(),
+    ) {
+        Ok(()) => {}
+        Err(error) => eprintln!("error: {error}"),
+    }
 
-    run_sections(renderer.as_mut(), &slf, tokens, history_queries);
     renderer.finish();
 
     ExitCode::SUCCESS
@@ -387,10 +503,13 @@ fn main() -> ExitCode {
 
 fn run_sections(
     e: &mut dyn ConfigViewer,
+    diag_renderer: &mut dyn DiagnosticsRenderer,
     slf: &Selafin,
     tokens: &[ShowToken],
     history_queries: &[HistoryQuery],
-) {
+    filename: &String,
+) -> Result<(), std::io::Error> {
+    let mut diagnostics = Diagnostics::default();
     for token in tokens {
         match token {
             ShowToken::Title => render_title(e, slf),
@@ -398,15 +517,22 @@ fn run_sections(
             ShowToken::NElements => render_nelements(e, slf),
             ShowToken::NLayers => render_nlayers(e, slf),
             ShowToken::Variables { with_units } => render_variables(e, slf, *with_units),
-            ShowToken::Points { layer } => render_points(e, slf, *layer),
-            ShowToken::Elements { layer } => render_elements(e, slf, *layer),
+            ShowToken::Points { layer } => {
+                render_points(e, slf, *layer, &mut diagnostics, filename)
+            }
+            ShowToken::Elements { layer } => {
+                render_elements(e, slf, *layer, &mut diagnostics, filename)
+            }
             ShowToken::Datetime => render_datetime(e, slf),
             ShowToken::Results => render_results(e, slf),
         }
     }
     for query in history_queries {
-        render_history(e, slf, query);
+        render_history(e, slf, query, &mut diagnostics, filename);
     }
+    diag_renderer.render(&diagnostics)?;
+
+    Ok(())
 }
 
 // cSpell:ignore npoints nelements nlayers nplanes

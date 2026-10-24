@@ -9,10 +9,68 @@ use super::variable::{SlfVariable, TimeSerie, VariableEvolution};
 use super::Selafin;
 use binrw::Endian;
 use chrono::NaiveDateTime;
+use fluent_message::FluentMessage;
 use regex::RegexBuilder;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
+
+use crate::t;
+
+/// Diagnostic messages (e.g. error) when parsing selafin file
+#[derive(FluentMessage)]
+enum SelafinParserDiag {
+    UnknownEndiannessError,
+    RecordLenMismatch {
+        len: u32,
+        ctrl: u32,
+    },
+    FloatSizeError {
+        record_size: usize,
+        expected_f32: usize,
+        expected_f64: usize,
+        npoin3: usize,
+    },
+    InvalidDate {
+        year: i32,
+        month: u32,
+        day: u32,
+    },
+    InvalidTime {
+        hour: u32,
+        min: u32,
+        sec: u32,
+    },
+    TruncatedRecord {
+        record_name: String,
+        got: usize,
+        expected: usize,
+        unit: String,
+    },
+    UnexpectedEntryCnt {
+        record_name: String,
+        got: usize,
+        expected: usize,
+    },
+    InconsistentCoordsVector {
+        npoin3: usize,
+        x_len: usize,
+        y_len: usize,
+    },
+    InconsistentPlanCnt {
+        iparam_nplan: u32,
+        geo_nplan: u32,
+    },
+    EmptyTimeEntry {
+        time_idx: usize,
+    },
+    EmptyHistoryRecord {
+        var_name: String,
+        time_idx: usize,
+        var_cnt: usize,
+        npoin3: usize,
+    },
+}
 
 /// Indexes for IPARAM header array
 enum IParams {
@@ -27,6 +85,12 @@ enum IParams {
 // ---------------------------------------------------------------------------
 // Low-level record helpers
 // ---------------------------------------------------------------------------
+
+/// Helper function to  create an `binrw::Error::AssertFail` to handle parsing error
+fn error(pos: u64, msg: impl FluentMessage) -> binrw::Error {
+    let message = crate::i18n::lookup_message(&fluent_i18n::get_locale(), msg);
+    binrw::Error::AssertFail { pos, message }
+}
 
 /// Read one Fortran-style record: u32 length, `length` bytes of data, u32 control.
 /// Returns the raw bytes if both length fields agree; otherwise returns an error.
@@ -44,10 +108,10 @@ fn read_record<R: Read + Seek>(reader: &mut R, endian: Endian) -> binrw::BinResu
     let ctrl = read_u32(reader)?;
 
     if len != ctrl {
-        return Err(binrw::Error::AssertFail {
-            pos: reader.stream_position()?,
-            message: format!("Record length mismatch: header={len} trailer={ctrl}"),
-        });
+        return Err(error(
+            reader.stream_position()?,
+            SelafinParserDiag::RecordLenMismatch { len, ctrl },
+        ));
     }
     Ok(data)
 }
@@ -72,10 +136,7 @@ fn detect_endianness<R: Read + Seek>(reader: &mut R) -> binrw::BinResult<Endian>
     }
 
     reader.seek(SeekFrom::Start(start))?;
-    Err(binrw::Error::AssertFail {
-        pos: start,
-        message: "Cannot determine file endianness from the first record".into(),
-    })
+    Err(error(start, SelafinParserDiag::UnknownEndiannessError))
 }
 
 // ---------------------------------------------------------------------------
@@ -199,17 +260,15 @@ fn detect_float_size<R: Read + Seek>(
     } else if data.len() == expected_f64 {
         Ok(FloatSize::F64)
     } else {
-        Err(binrw::Error::AssertFail {
-            pos: start,
-            message: format!(
-                "Cannot determine float size: record is {} bytes, \
-                 expected {} (f32) or {} (f64) for npoin3={}",
-                data.len(),
+        Err(error(
+            start,
+            SelafinParserDiag::FloatSizeError {
+                record_size: data.len(),
                 expected_f32,
                 expected_f64,
-                npoin3
-            ),
-        })
+                npoin3,
+            },
+        ))
     }
 }
 
@@ -222,19 +281,11 @@ fn parse_datetime(vals: &[u32], pos: u64) -> binrw::BinResult<NaiveDateTime> {
     let (year, month, day, hour, min, sec) =
         (vals[0] as i32, vals[1], vals[2], vals[3], vals[4], vals[5]);
 
-    let date = chrono::NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| {
-        binrw::Error::AssertFail {
-            pos,
-            message: format!("Invalid date in datetime record: {year:04}-{month:02}-{day:02}"),
-        }
-    })?;
+    let date = chrono::NaiveDate::from_ymd_opt(year, month, day)
+        .ok_or_else(|| error(pos, SelafinParserDiag::InvalidDate { year, month, day }))?;
 
-    let time = chrono::NaiveTime::from_hms_opt(hour, min, sec).ok_or_else(|| {
-        binrw::Error::AssertFail {
-            pos,
-            message: format!("Invalid time in datetime record: {hour:02}:{min:02}:{sec:02}"),
-        }
-    })?;
+    let time = chrono::NaiveTime::from_hms_opt(hour, min, sec)
+        .ok_or_else(|| error(pos, SelafinParserDiag::InvalidTime { hour, min, sec }))?;
 
     Ok(NaiveDateTime::new(date, time))
 }
@@ -267,14 +318,14 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // 1.1 - Title (80-character string)
     let title = {
         let data = read_record(&mut reader, endian)?;
-        if data.len() < 80 {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!("Title record too short: {} bytes", data.len()),
-            });
-        }
+        // if data.len() < 80 {
+        //     return Err(error(
+        //         reader.stream_position()?,
+        //         SelafinParserDiag::TruncatedRecord { record_name: t!("selafin-record-title"), got: data.len(), expect: 80 },
+        //     ));
+        // }
 
-        let stringified = ascii_record_to_string(&data[..80]);
+        let stringified = ascii_record_to_string(&data);
 
         // Try to remove the "SELAFIN"/"SELAFIND" tag at end (sometime spelled
         // SELAPHIN (with "PH" instead of "F") of SERAFIN (with "R" instead of "L"))
@@ -290,10 +341,15 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() < 2 {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: "Variable count record too short".into(),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::TruncatedRecord {
+                    record_name: t!("selafin-record-var-cnt"),
+                    got: vals.len(),
+                    expected: 2,
+                    unit: "u32".into(),
+                },
+            ));
         }
         (vals[0] as usize, vals[1] as usize)
     };
@@ -309,10 +365,14 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() != 10 {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!("iparam record has {} values, expected 10", vals.len()),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::UnexpectedEntryCnt {
+                    record_name: t!("selafin-record-iparam"),
+                    got: vals.len(),
+                    expected: 10,
+                },
+            ));
         }
         vals
     };
@@ -328,10 +388,14 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() < 6 {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!("datetime record has only {} values, expected 6", vals.len()),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::UnexpectedEntryCnt {
+                    record_name: t!("datetime"),
+                    got: vals.len(),
+                    expected: 6,
+                },
+            ));
         }
 
         Some(parse_datetime(&vals[..6], reader.stream_position()?)?)
@@ -348,23 +412,27 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() < 4 {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!("Geometry integer header has only {} values", vals.len()),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::TruncatedRecord {
+                    record_name: t!("selafin-record-geometry-header"),
+                    got: vals.len(),
+                    expected: 4,
+                    unit: "u32".into(),
+                },
+            ));
         }
 
         let nplan = max(vals[3], 1);
 
         if nplan != max(iparams[IParams::PlanesCnt as usize], 1) {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!(
-                    "Inconsistent number of planes, IPARAMS says {}, Geometry says {}",
-                    iparams[IParams::PlanesCnt as usize],
-                    nplan
-                ),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::InconsistentPlanCnt {
+                    iparam_nplan: iparams[IParams::PlanesCnt as usize],
+                    geo_nplan: nplan,
+                },
+            ));
         }
 
         (vals[0] as usize, vals[1] as usize, vals[2] as usize, nplan)
@@ -376,14 +444,14 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() != expected {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!(
-                    "ikle3 record has {} values, expected {}",
-                    vals.len(),
-                    expected
-                ),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::UnexpectedEntryCnt {
+                    record_name: t!("selafin-record-ikle3"),
+                    got: vals.len(),
+                    expected,
+                },
+            ));
         }
         vals.iter().map(|v| v - 1).collect()
     };
@@ -395,14 +463,14 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
         if vals.len() != expected {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!(
-                    "ipob3 record has {} values, expected {}",
-                    vals.len(),
-                    expected
-                ),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::UnexpectedEntryCnt {
+                    record_name: t!("selafin-record-ipob3"),
+                    got: vals.len(),
+                    expected,
+                },
+            ));
         }
 
         // Values in Slf files are 1-based indexes where '0' means invalid value
@@ -440,13 +508,14 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
     // Make sure x & y has the same length! Later (in slf.points_count())
     // we are only relying on the size of 'x' vector
     if (x_len != npoin3) || (y_len != npoin3) {
-        return Err(binrw::Error::AssertFail {
-            pos: reader.stream_position()?,
-            message: format!(
-                "Inconsistent number of points.
-                Header says {npoin3} points, x record says {x_len} points, y records says {y_len}"
-            ),
-        });
+        return Err(error(
+            reader.stream_position()?,
+            SelafinParserDiag::InconsistentCoordsVector {
+                npoin3,
+                x_len,
+                y_len,
+            },
+        ));
     }
 
     let geo = SlfGeometry::new(points, ipob3, mesh, npd3, nplan).with_parallel_info(
@@ -508,13 +577,15 @@ fn read_variable_records<R: Read + Seek>(
         let data = read_record(reader, endian)?;
         // Each record is 32 bytes: 16-char name + 16-char unit
         if data.len() < 32 {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!(
-                    "Variable record too short: {} bytes (expected ≥ 32)",
-                    data.len()
-                ),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::TruncatedRecord {
+                    record_name: t!("selafin-record-var"),
+                    got: data.len(),
+                    expected: 32,
+                    unit: "byte".into(),
+                },
+            ));
         }
         let parts = split_fixed_strings(&data, 16);
         #[allow(clippy::get_first)]
@@ -573,10 +644,10 @@ where
         let time_data = read_record(reader, endian)?;
         let t = T::vec_from_bytes_endian(&time_data, endian);
         if t.is_empty() {
-            return Err(binrw::Error::AssertFail {
-                pos: reader.stream_position()?,
-                message: format!("Time entry for history #{time_idx} is empty"),
-            });
+            return Err(error(
+                reader.stream_position()?,
+                SelafinParserDiag::EmptyTimeEntry { time_idx },
+            ));
         }
 
         let mut all_values_for_current_time: Vec<PointValues<T>> = Vec::with_capacity(nb_var);
@@ -586,16 +657,15 @@ where
             let var_values = T::vec_from_bytes_endian(&var_data, endian);
 
             if var_values.len() != npoin3 {
-                return Err(binrw::Error::AssertFail {
-                    pos: reader.stream_position()?,
-                    message: format!(
-                        "values of Variable '{}' value records for history entry #{} has {} values, expected {}",
-                        var_def.name,
+                return Err(error(
+                    reader.stream_position()?,
+                    SelafinParserDiag::EmptyHistoryRecord {
+                        var_name: var_def.name.clone(),
                         time_idx,
-                        var_values.len(),
-                        npoin3
-                    ),
-                });
+                        var_cnt: var_values.len(),
+                        npoin3,
+                    },
+                ));
             }
 
             all_values_for_current_time.push(var_values);
@@ -614,7 +684,7 @@ where
         let name = var_def.name.clone();
         let ve = VariableEvolution {
             var: var_def.clone(),
-            values: values.into_iter().map(|v| v.into()).collect(),
+            values: values.into_iter().map(Into::into).collect(),
         };
 
         vars.insert(name, ve);

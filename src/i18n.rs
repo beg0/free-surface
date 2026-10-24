@@ -4,13 +4,27 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use fluent_bundle::FluentValue;
-use fluent_i18n::i18n;
 
 use fluent_i18n::fluent_templates::{LanguageIdentifier, Loader};
 use fluent_langneg::{negotiate_languages, NegotiationStrategy};
+use fluent_message::FluentMessage;
 use unic_langid::langid;
 
-i18n!("resources/translations", fallback = "en-US");
+mod units;
+use units::{units, with_units};
+
+fluent_templates::static_loader! {
+    static FREE_SURFACE_LOCALES = {
+        locales: "resources/translations",
+        fallback_language: "en-US",
+        customise: |bundle| {
+            bundle.set_use_isolating(false);
+            bundle.add_function( "UNITS", units).expect("add UNITS function to fluent");
+            bundle.add_function( "WITH_UNITS", with_units).expect("add WITH_UNITS function to fluent");
+
+        }
+    };
+}
 
 /// Set locale to use in free-surface
 ///
@@ -30,7 +44,7 @@ pub fn set_locale(requested: Option<String>) -> Result<(), Box<dyn std::error::E
         default.clone()
     };
 
-    let available: Vec<LanguageIdentifier> = LOCALES.locales().cloned().collect();
+    let available: Vec<LanguageIdentifier> = FREE_SURFACE_LOCALES.locales().cloned().collect();
 
     let negotiated = negotiate_languages(
         &[lang_id],
@@ -47,7 +61,7 @@ pub fn set_locale(requested: Option<String>) -> Result<(), Box<dyn std::error::E
 
 /// Look up `text_id` for `lang` in Fluent.
 pub fn lookup(lang: &LanguageIdentifier, text_id: &str) -> String {
-    LOCALES.lookup(lang, text_id)
+    FREE_SURFACE_LOCALES.lookup(lang, text_id)
 }
 
 /// Look up `text_id` for `lang` with `args` in Fluent.
@@ -56,7 +70,12 @@ pub fn lookup_with_args(
     text_id: &str,
     args: &HashMap<Cow<'static, str>, FluentValue>,
 ) -> String {
-    LOCALES.lookup_with_args(lang, text_id, args)
+    FREE_SURFACE_LOCALES.lookup_with_args(lang, text_id, args)
+}
+
+/// Look up `text_id` for `lang` in Fluent.
+pub fn lookup_message(lang: &LanguageIdentifier, msg: impl FluentMessage) -> String {
+    FREE_SURFACE_LOCALES.lookup_with_args(lang, msg.msg_id(), &msg.args())
 }
 
 /// Macro to lookup a translation for a given key.
@@ -77,14 +96,15 @@ pub fn lookup_with_args(
 ///   The argument values must implement the [`ToFluentValue`] trait, which allows
 ///   converting various types to a [`FluentValue`].
 ///
-/// # Using a custom static loader
+/// # Using a custom locale
 ///
-/// If you don't want to use the [`i18n!`] macro or have a custom static loader,
-/// you can use it with this macro by passing it as the first argument as follows:
+/// If you don't want to use the locale from free_surface (e.g. if you use
+/// [`fluent_i18n::i18n!`] macro or you have a custom static loader), you can
+/// use it with this macro by passing it as the first argument as follows:
 ///
 /// ```rust,ignore
 /// use fluent_templates::Loader;
-/// use fluent_i18n::t;
+/// use free_surface::t;
 ///
 /// let custom_loader = fluent_templates::static_loader! {
 ///     static CUSTOM_LOCALES = {
@@ -116,7 +136,7 @@ pub fn lookup_with_args(
 // See <https://rust-lang.github.io/rust-clippy/master/index.html#crate_in_macro_def>
 //
 // This is normally not recommended for macro hygiene reasons,
-// but we need it here to access the `LOCALES` static loader
+// but we need it here to access the `lookup()` and `lookup_with_args()`
 // from the crate where it is defined.
 //
 // In other words, using `$crate` points to `fluent_i18n::LOCALES`
@@ -150,7 +170,7 @@ macro_rules! t {
         }
     }};
 
-    // t!(LOCALES, "key")
+    // t!(CUSTOM_LOCALES, "key")
     ($locales:expr, $key:expr) => {{
         if fluent_i18n::locale::RAW_MODE_ENABLED.with(|b| *b.borrow()) {
             $key.to_string()
@@ -160,7 +180,7 @@ macro_rules! t {
         }
     }};
 
-    // t!(LOCALES, "key", { arg => val, ... })
+    // t!(CUSTOM_LOCALES, "key", { arg => val, ... })
     ($locales:expr, $key:expr, { $($arg:expr => $val:expr),+ $(,)? }) => {{
         if fluent_i18n::locale::RAW_MODE_ENABLED.with(|b| *b.borrow()) {
             $key.to_string()

@@ -161,7 +161,7 @@ fn write_iparam<W: Write>(w: &mut W, slf: &Selafin, endian: Endian) -> Result<()
     iparam[6] = geo.planes_cnt(); // PlanesCnt
     iparam[7] = geo.boundaries_count; // BoundariesCnt
     iparam[8] = geo.interfaces_count; // IfaceCnt
-    iparam[9] = if slf.datetime.is_some() { 1 } else { 0 }; // HasDateTime
+    iparam[9] = u32::from(slf.datetime.is_some()); // HasDateTime
 
     write_record(w, &u32s_to_bytes(&iparam, endian), endian)
 }

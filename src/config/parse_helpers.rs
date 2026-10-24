@@ -46,6 +46,7 @@ pub use damocles::*;
 /// // Already looks quoted - treated as plain text, not double-quoted
 /// assert_eq!(single_quote_if_needed("'hello'"),        "'''hello'''");
 /// ```
+#[must_use]
 pub fn single_quote_if_needed(s: &str) -> String {
     let needs_quoting = s.is_empty() || s.contains(|c: char| c.is_whitespace() || c == '\'');
 
@@ -58,6 +59,7 @@ pub fn single_quote_if_needed(s: &str) -> String {
 }
 
 /// Remove surrounding single quotes, and unescape '' -> '
+#[must_use]
 pub fn unquote_single(s: &str) -> String {
     let inner = if s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2 {
         &s[1..s.len() - 1]
@@ -144,6 +146,7 @@ pub fn parse_fortran_float(s: &str) -> Result<f64, std::num::ParseFloatError> {
 /// // Negative zero is treated as positive zero
 /// assert_eq!(write_fortran_float_with_precision(-0.0, 6),       "-0.000000E+00");
 /// ```
+#[must_use]
 pub fn write_fortran_float_with_precision(v: f64, precision: usize) -> String {
     // {:E} gives uppercase E and handles sign on the mantissa,
     // but the exponent has no leading zero and no forced sign.

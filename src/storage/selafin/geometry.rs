@@ -70,7 +70,7 @@ impl SlfGeometry {
         }
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::must_use_candidate)]
     pub fn with_parallel_info(mut self, boundaries: u32, interfaces: u32) -> Self {
         self.boundaries_count = boundaries;
         self.interfaces_count = interfaces;

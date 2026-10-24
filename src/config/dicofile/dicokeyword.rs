@@ -91,16 +91,19 @@ pub struct DicoKeyword {
 }
 
 impl DicoKeyword {
+    #[must_use]
     pub fn name(&self) -> &String {
         &self.default_text_desc().name
     }
 
+    #[must_use]
     pub fn default_text_desc(&self) -> &KeywordTextDescription {
         self.text_desc
             .get(LOCALES[0])
             .expect("No english description")
     }
 
+    #[must_use]
     pub fn default(&self) -> ConfigValue {
         let text_desc = &self.text_desc.get(LOCALES[0]);
 
@@ -126,6 +129,7 @@ impl DicoKeyword {
             .unwrap_or_else(default_generator)
     }
 
+    #[must_use]
     pub fn has_choices(&self) -> bool {
         let choice_cnt = self
             .text_desc
@@ -134,6 +138,7 @@ impl DicoKeyword {
         choice_cnt > 0
     }
 
+    #[must_use]
     fn get_all_choices(&self) -> Vec<ChoiceOptionHelp> {
         let mut ret: Vec<ChoiceOptionHelp> = Vec::new();
         for desc in self.text_desc.values() {
