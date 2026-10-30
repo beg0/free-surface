@@ -1,5 +1,8 @@
 //! # Geometry elements in Selfain files
 
+use std::path::Path;
+use std::sync::Arc;
+
 use super::container::SlfArray2D;
 
 /// Coords and mesh for digital elevation model in Selafin
@@ -29,6 +32,9 @@ pub struct SlfGeometry {
 
     /// Number of interfaces (for parallel computation)
     pub interfaces_count: u32,
+
+    /// The file this geometry is originated from (if known)
+    filename: Option<Arc<Path>>,
 }
 
 impl Default for SlfGeometry {
@@ -41,6 +47,7 @@ impl Default for SlfGeometry {
             points: SlfArray2D::default(),
             boundaries_count: 0,
             interfaces_count: 0,
+            filename: None,
         }
     }
 }
@@ -67,6 +74,7 @@ impl SlfGeometry {
             points,
             boundaries_count: 0,
             interfaces_count: 0,
+            filename: None,
         }
     }
 
@@ -74,6 +82,12 @@ impl SlfGeometry {
     pub fn with_parallel_info(mut self, boundaries: u32, interfaces: u32) -> Self {
         self.boundaries_count = boundaries;
         self.interfaces_count = interfaces;
+        self
+    }
+
+    /// Set originator file name info
+    pub fn with_filename(mut self, filename: Arc<Path>) -> Self {
+        self.filename = Some(filename.clone());
         self
     }
 
@@ -224,6 +238,12 @@ impl SlfGeometry {
     #[must_use]
     pub fn ipob3(&self) -> &[u32] {
         &self.ipob3
+    }
+
+    /// Return the file name this geometry is originated from (if known)
+    #[must_use]
+    pub fn filename(&self) -> &Option<Arc<Path>> {
+        &self.filename
     }
 }
 

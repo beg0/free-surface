@@ -14,6 +14,7 @@ use regex::RegexBuilder;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::Arc;
 
 use crate::t;
 
@@ -703,8 +704,13 @@ use std::path::Path;
 
 /// Open and parse a Selafin file at `path`.
 pub fn parse_file<P: AsRef<Path>>(path: P) -> binrw::BinResult<Selafin> {
-    let file = File::open(path).map_err(binrw::Error::Io)?;
-    parse(BufReader::new(file))
+    let file = File::open(&path).map_err(binrw::Error::Io)?;
+    parse(BufReader::new(file)).map(|slf| {
+        let arc_path: Arc<Path> = Arc::from(path.as_ref().to_path_buf());
+        let mut slf2 = slf;
+        slf2.geo = slf2.geo.with_filename(arc_path);
+        slf2
+    })
 }
 
 #[cfg(test)]
