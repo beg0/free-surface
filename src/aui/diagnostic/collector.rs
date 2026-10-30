@@ -74,6 +74,26 @@ impl Diagnostic {
         self.loc = DiagnosticLocation::Filename(filename.into());
         self
     }
+
+    /// Add [TextLoc] info to a diagnostic from an Option (only if Some)
+    ///
+    /// Same as [Diagnostic.with_textloc] but only if the parameter is Some
+    pub fn with_textloc_option(&mut self, loc: Option<TextLoc>) -> &mut Self {
+        if let Some(l) = loc {
+            self.loc = DiagnosticLocation::TextLoc(l);
+        }
+        self
+    }
+
+    /// Add filename info to a diagnostic from an Option (only if Some)
+    ///
+    /// Same as [Diagnostic.with_filename] but only if the parameter is Some
+    pub fn with_filename_option(&mut self, filename: Option<impl Into<String>>) -> &mut Self {
+        if let Some(f) = filename {
+            self.loc = DiagnosticLocation::Filename(f.into());
+        }
+        self
+    }
 }
 
 /// Diagnostic collector
