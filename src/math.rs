@@ -66,3 +66,27 @@ impl fmt::Debug for Point3f {
         write!(f, "({}, {}, {})", self.x, self.y, self.z)
     }
 }
+
+/// Wrapper around `Vec<Point3f>` to print list in comma-separated string
+#[derive(Debug)]
+pub struct Point3fCollection(Vec<Point3f>);
+
+impl fmt::Display for Point3fCollection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{{{}}}",
+            self.0
+                .iter()
+                .map(|pt| format!("{}", pt))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+impl From<Vec<Point3f>> for Point3fCollection {
+    fn from(value: Vec<Point3f>) -> Self {
+        Point3fCollection(value)
+    }
+}
