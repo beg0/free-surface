@@ -3,8 +3,10 @@
 //! A command-line tool to inspect and dump the contents of Selafin binary files.
 //
 use std::io;
+use std::path::Path;
 use std::process::ExitCode;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::{process, vec};
 
 use clap::Parser;
@@ -277,7 +279,7 @@ fn render_points(
     slf: &Selafin,
     layer: Option<usize>,
     diag: &mut Diagnostics,
-    filename: &String,
+    filename: &Arc<Path>,
 ) {
     let geo = slf.geometry();
     let section_name = match layer {
@@ -299,7 +301,7 @@ fn render_points(
                     requested: n,
                     actual: geo.planes_cnt() as usize,
                 })
-                .with_filename(filename);
+                .with_filename(filename.clone());
                 return;
             }
             (&xs[start..end], &ys[start..end])
@@ -321,7 +323,7 @@ fn render_elements(
     slf: &Selafin,
     layer: Option<usize>,
     diag: &mut Diagnostics,
-    filename: &String,
+    filename: &Arc<Path>,
 ) {
     let geo = slf.geometry();
     let section_name = match layer {
@@ -342,7 +344,7 @@ fn render_elements(
                     requested: n,
                     actual: geo.planes_cnt() as usize,
                 })
-                .with_filename(filename);
+                .with_filename(filename.clone());
                 return;
             }
             vec![n]
@@ -392,7 +394,7 @@ fn render_history(
     slf: &Selafin,
     query: &HistoryQuery,
     diag: &mut Diagnostics,
-    filename: &String,
+    filename: &Arc<Path>,
 ) {
     let ts = slf.results();
 
@@ -401,7 +403,7 @@ fn render_history(
             time: query.time_index,
             step_count: ts.step_count(),
         })
-        .with_filename(filename);
+        .with_filename(filename.clone());
         return;
     }
 
@@ -409,7 +411,7 @@ fn render_history(
         diag.error(SlfDumpDiagnostic::NoSuchVariable {
             variable: query.variable.clone(),
         })
-        .with_filename(filename);
+        .with_filename(filename.clone());
 
         let available_variables = ts
             .iter_vars()
@@ -420,7 +422,7 @@ fn render_history(
         diag.hint(SlfDumpDiagnostic::AvailableVariables {
             variables: available_variables,
         })
-        .with_filename(filename);
+        .with_filename(filename.clone());
         return;
     };
 
@@ -465,6 +467,7 @@ fn main() -> ExitCode {
 
     let mut renderer = create_config_viewer(stdout.lock(), get_config_viewer_options(&args));
     let mut diag_render = create_diagnostic_renderer(stderr.lock(), get_diag_render_options(&args));
+    let target_file: Arc<Path> = Arc::from(args.file.clone());
 
     if tokens.is_empty() && history_queries.is_empty() {
         let mut diagnostics = Diagnostics::default();
@@ -475,11 +478,11 @@ fn main() -> ExitCode {
     }
 
     // Parse the file
-    let slf = parse_file(&args.file).unwrap_or_else(|error| {
+    let slf = parse_file(&target_file).unwrap_or_else(|error| {
         let mut diagnostics = Diagnostics::default();
         diagnostics
             .error(SlfDumpDiagnostic::FileParsingFailure { error })
-            .with_filename(args.file.to_string_lossy());
+            .with_filename(target_file.clone());
         print_diagnostics(&diagnostics, &args).expect("Fail to render diagnostics");
         process::exit(1);
     });
@@ -490,7 +493,7 @@ fn main() -> ExitCode {
         &slf,
         tokens,
         history_queries,
-        &args.file.to_string_lossy().to_string(),
+        &target_file,
     ) {
         Ok(()) => {}
         Err(error) => eprintln!("error: {error}"),
@@ -507,7 +510,7 @@ fn run_sections(
     slf: &Selafin,
     tokens: &[ShowToken],
     history_queries: &[HistoryQuery],
-    filename: &String,
+    filename: &Arc<Path>,
 ) -> Result<(), std::io::Error> {
     let mut diagnostics = Diagnostics::default();
     for token in tokens {

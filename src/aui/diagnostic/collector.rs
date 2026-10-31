@@ -3,6 +3,8 @@
 
 use fluent_message::FluentMessage;
 use std::fmt;
+use std::path::Path;
+use std::sync::Arc;
 
 use crate::config::textloc::TextLoc;
 
@@ -27,7 +29,7 @@ pub enum Severity {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DiagnosticLocation {
     TextLoc(TextLoc),
-    Filename(String),
+    Filename(Arc<Path>),
     None,
 }
 
@@ -35,7 +37,7 @@ impl fmt::Display for DiagnosticLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DiagnosticLocation::TextLoc(loc) => loc.fmt(f),
-            DiagnosticLocation::Filename(filename) => filename.fmt(f),
+            DiagnosticLocation::Filename(filename) => filename.display().fmt(f),
             DiagnosticLocation::None => write!(f, ""),
         }
     }
@@ -70,8 +72,8 @@ impl Diagnostic {
     }
 
     /// Add filename info to a diagnostic
-    pub fn with_filename(&mut self, filename: impl Into<String>) -> &mut Self {
-        self.loc = DiagnosticLocation::Filename(filename.into());
+    pub fn with_filename(&mut self, filename: Arc<Path>) -> &mut Self {
+        self.loc = DiagnosticLocation::Filename(filename);
         self
     }
 
@@ -88,9 +90,9 @@ impl Diagnostic {
     /// Add filename info to a diagnostic from an Option (only if Some)
     ///
     /// Same as [Diagnostic.with_filename] but only if the parameter is Some
-    pub fn with_filename_option(&mut self, filename: Option<impl Into<String>>) -> &mut Self {
+    pub fn with_filename_option(&mut self, filename: &Option<Arc<Path>>) -> &mut Self {
         if let Some(f) = filename {
-            self.loc = DiagnosticLocation::Filename(f.into());
+            self.loc = DiagnosticLocation::Filename(f.clone());
         }
         self
     }
@@ -267,12 +269,12 @@ mod tests {
     fn loc3() -> TextLoc {
         TextLoc::from(("test.txt", 5))
     }
-    fn filename1() -> String {
-        String::from("the_ultimate_test.txt")
+    fn filename1() -> Arc<Path> {
+        Arc::from(std::path::PathBuf::from("the_ultimate_test.txt"))
     }
 
-    fn filename2() -> String {
-        String::from("strange_file.txt")
+    fn filename2() -> Arc<Path> {
+        Arc::from(std::path::PathBuf::from("strange_file.txt"))
     }
 
     #[test]

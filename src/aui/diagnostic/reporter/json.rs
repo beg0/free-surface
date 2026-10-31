@@ -38,7 +38,7 @@ impl<W: Write> DiagnosticsRenderer for JsonDiagnosticsRenderer<W> {
                     }
                     DiagnosticLocation::Filename(filename) => {
                         locations.push(serde_json::json!({
-                            "filename": filename
+                            "filename": filename.to_string_lossy()
                         }));
                     }
                     DiagnosticLocation::None => {}
