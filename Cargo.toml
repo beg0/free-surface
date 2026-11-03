@@ -49,3 +49,6 @@ tar = "0.4"
 tempfile = "3"
 predicates = { version = "3", features = ["diff", "color"] }
 ureq = "3"
+
+[package.metadata.docs.rs]
+rustdoc-args = [ "--html-in-header", "doc/katex-header.html" ]

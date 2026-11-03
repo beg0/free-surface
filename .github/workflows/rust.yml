@@ -37,5 +37,5 @@ jobs:
         run: cargo test -r -- --include-ignored
       - name: Build doc
         env:
-          RUSTDOCFLAGS: -D warnings
+          RUSTDOCFLAGS: --html-in-header doc/katex-header.htm -D warnings
         run: cargo doc --all-features --no-deps
