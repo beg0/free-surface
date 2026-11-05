@@ -1,11 +1,16 @@
 //! # Neighbors
 //!
-//! Easy access to neighbor cell in a mesh
+//! Easy access to neighbor cell (aka neighbor element) in a mesh
 //!
 use super::celliterator::{CellData, CellIterator};
 use crate::storage::selafin::geometry::SlfGeometry;
+
+/// Info about each neighbor of each point in the mesh
 pub struct Neighbors {
+    /// Neighbors info, indexed by point index
     neighbors: Vec<Option<NeighborInfo>>,
+
+    /// Number of point in a cell (aka element)
     point_per_cell: usize,
 }
 
@@ -35,10 +40,7 @@ impl Neighbors {
         NeighborsIterator::new(self)
     }
 
-    // fn linear_idx(&self, cell_idx: usize, edge_idx: usize) -> usize {
-    //     (cell_idx * self.point_per_cell) + edge_idx
-    // }
-
+    /// Create a [Neighbors] from a selafin [SlfGeometry].
     pub fn from_selafin(geometry: &SlfGeometry) -> Self {
         // Make sure we are in 2D
         assert_eq!(geometry.planes_cnt(), 1);
@@ -61,17 +63,6 @@ impl Neighbors {
 
         let mut neighbors_count: Vec<usize> = vec![0; points_count];
 
-        // for points_in_cell in geometry.ikle2(0).expect("No layer #0").chunks(point_per_cell) {
-        //     for idx_in_cell in 0..(edge_per_cell-1) {
-        //         let start_point = points_in_cell[idx_in_cell] as usize;
-        //         let end_point = points_in_cell[(idx_in_cell + 1) % point_per_cell] as usize;
-
-        //         // TODO: improve me. end_point for one edge will be the start_point for next edge
-        //         neighbors_count[start_point] += 1;
-        //         neighbors_count[end_point] += 1;
-        //     }
-        // }
-
         for pt_idx in geometry.ikle2(0).expect("No layer #0") {
             // For a given cell with point A, B, C, edges are the following:
             //  * A-B
@@ -80,15 +71,6 @@ impl Neighbors {
             // Thus each point has 2 neighbors.
             neighbors_count[(*pt_idx) as usize] += 2;
         }
-
-        // let mut start_idx_offset: Vec<usize> = Vec::with_capacity(points_count);
-        // let mut sum = 0;
-        // start_idx_offset.push(sum);
-        // for i in 0..points_count-1 {
-        //     sum += neighbors_count[i];
-        //     start_idx_offset.push(sum);
-        // }
-        // let imax = sum + neighbors_count.last().unwrap();
 
         // TODO: check what is the best (fastest) storage for neighbor_info_per_point:
         //   - Vec<Vec<_>>, knowing that neighbors_count[i] is probably oversized
