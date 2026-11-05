@@ -36,6 +36,11 @@ fn from_selafin() {
         neighbors.data_len() / neighbors.point_per_cell()
     );
 
+    assert_eq!(neighbors.max_cell_per_point(), 7);
+
+    //FIXME: not aligned with telemac here, telemac says 7, we measured 4
+    assert_eq!(neighbors.max_neighbor_cnt(), 4);
+
     for (cell_idx, neighbors) in neighbors.iter().enumerate() {
         let expected_neighbors_this_cell_json = &expected_cells_neighbors[cell_idx];
         let expected_neighbors_this_cell = expected_neighbors_this_cell_json

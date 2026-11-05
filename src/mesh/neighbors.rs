@@ -12,6 +12,12 @@ pub struct Neighbors {
 
     /// Number of point in a cell (aka element)
     point_per_cell: usize,
+
+    /// Maximum number of cell a point can be in (cached value)
+    max_cell_per_point: usize,
+
+    /// Maximun number of points a point can be connected with
+    max_neighbor_cnt: usize,
 }
 
 /// For each edge in a cell, tell who is my neighbor cell
@@ -71,6 +77,17 @@ impl Neighbors {
             // Thus each point has 2 neighbors.
             neighbors_count[(*pt_idx) as usize] += 2;
         }
+
+        // As per above formula, a point is counted twice each time it is part of a cell
+        // thus to know in how many cell a point is, we have to divide neighbors_count[pt_idx] by two
+        //  Below, instead of dividing every value by two, we simply divide the result by 2
+
+        let boundary_info = geometry.ipob2(0).expect("No layer #0");
+
+        let max_cell_per_point = neighbors_count
+            .iter()
+            .fold(0, |current, candidate_value| current.max(*candidate_value))
+            / 2;
 
         // TODO: check what is the best (fastest) storage for neighbor_info_per_point:
         //   - Vec<Vec<_>>, knowing that neighbors_count[i] is probably oversized
@@ -139,10 +156,77 @@ impl Neighbors {
 
         //dbg!(neighbor_info_per_point);
 
+        let neighbor_cnt_per_point = neighbor_info_per_point.iter().map(|ni| ni.len());
+        // let max_neighbor_cnt =
+        //     neighbor_cnt_per_point.fold(0, |current, candidate| current.max(candidate));
+
+        // TODO: telemac looks for a unique neighbor only in tetrahedra type of element (e.g. IELM==31)
+        // otherwise, it takes max_cell_per_point as a basis, and adding 1 for boundary node.
+        // In case of tetrahedra, telemac does not look at boundary info (which sound strange to me)
+        let max_neighbor_cnt = neighbor_cnt_per_point.enumerate().fold(
+            0,
+            |current, (candidate_idx, candidate_value)| {
+                let mut v = candidate_value;
+                // If this node is at boundary, we need to consider a (fantom) neighbor point from outside the mesh
+                if boundary_info[candidate_idx] != 0 {
+                    v += 1;
+                }
+
+                current.max(v)
+            },
+        );
+
         Self {
             neighbors,
             point_per_cell,
+            max_cell_per_point,
+            max_neighbor_cnt,
         }
+    }
+
+    /// Maximum number of cell a point can be in
+    ///
+    /// This value can be used as an upper bound for allocations and/or loop
+    /// iteration.
+    ///
+    /// # Formula
+    ///
+    /// This value can be mathematically defined as following
+    ///
+    /// $$\underset{pt \in P}{max} ( card \lbrace c \in M, pt \in c \rbrace )$$
+    ///
+    /// Where:
+    /// - $P$ is the set of points in the mesh
+    /// - $M$ is the mesh a.k.a the set of cells
+    ///
+    /// # Performance
+    ///
+    /// This is a cached value.
+    pub fn max_cell_per_point(&self) -> usize {
+        self.max_cell_per_point
+    }
+
+    /// Maximun number of points a point can be connected with
+    ///
+    /// This is also the maximun number of (unique) edges a point can be part of
+    ///
+    /// By unique edge we mean: if edge [i-j] is the edge of 2 cells, it is count only once
+    ///
+    /// # Formula
+    ///
+    /// This value can be mathematically defined as following
+    ///
+    /// $$\underset{pt \in P}{max} ( card \lbrace e \in E, pt \in e \rbrace )$$
+    ///
+    /// Where:
+    /// - $P$ is the set of points in the mesh
+    /// - $E$ is the set of unique edges in the mesh
+    ///
+    /// # Performance
+    ///
+    /// This is a cached value.
+    pub fn max_neighbor_cnt(&self) -> usize {
+        self.max_neighbor_cnt
     }
 }
 
