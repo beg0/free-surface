@@ -2,6 +2,8 @@ cascontent
 casfile
 dicofile
 dicokeyword
+discretization
+discretizations
 iface
 nargs
 subdirs
