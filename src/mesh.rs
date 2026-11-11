@@ -2,6 +2,7 @@
 //!
 
 pub mod celliterator;
+pub mod elementtype;
 pub mod neighbors;
 pub mod percellcoords;
 
