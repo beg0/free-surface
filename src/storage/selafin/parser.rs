@@ -384,6 +384,9 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         iparams[IParams::YOrigin as usize],
     );
 
+    let mut boundaries_count = iparams[IParams::BoundariesCnt as usize];
+    let interfaces_count = iparams[IParams::IfaceCnt as usize];
+
     // 1.6 - Optional datetime record when iparam[9] == 1
     let datetime = if iparams[IParams::HasDateTime as usize] == 1 {
         let data = read_record(&mut reader, endian)?;
@@ -459,7 +462,7 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
 
     // 2.3 - ipob3 (npoin3 boundary codes)
     // TODO: if iparams[7] or iparams[8] != 0, then it's KNOLG and not IPOBO
-    let ipob3 = {
+    let ipob3: Vec<u32> = {
         let expected = npoin3;
         let data = read_record(&mut reader, endian)?;
         let vals = read_u32s(&data, endian);
@@ -481,6 +484,13 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
             .filter_map(|v| if *v == 0 { None } else { Some(*v - 1) })
             .collect()
     };
+
+    // If boundary count not provided in iparams, let's compute it
+    if boundaries_count == 0 && interfaces_count == 0 {
+        boundaries_count = ipob3
+            .iter()
+            .fold(0, |sum, b| if *b != 0 { sum + 1 } else { sum });
+    }
 
     // -----------------------------------------------------------------------
     // 4. Geometry - float mesh (detect f32 vs f64 here)
@@ -519,10 +529,8 @@ pub fn parse<R: Read + Seek>(mut reader: R) -> binrw::BinResult<Selafin> {
         ));
     }
 
-    let geo = SlfGeometry::new(points, ipob3, mesh, npd3, nplan).with_parallel_info(
-        iparams[IParams::BoundariesCnt as usize],
-        iparams[IParams::IfaceCnt as usize],
-    );
+    let geo = SlfGeometry::new(points, ipob3, mesh, npd3, nplan)
+        .with_parallel_info(boundaries_count, interfaces_count);
 
     // -----------------------------------------------------------------------
     // 5. Optional time history (remaining records, each npoin3 floats)
