@@ -5,6 +5,7 @@ clippy
 indoc
 isize
 flate
+repr
 rfind
 rustc
 rsplit

@@ -1,11 +1,19 @@
 apparence
+AUBOR
 bief
 dico
 dynlist
 gouttedo
 ikle
 ipob
+KADH
+KDRAIN
+KINC
+KENT
+KENTU
 khione
+KLOG
+KSORT
 liste
 mnemo
 nelem
@@ -18,4 +26,6 @@ sisyphe
 stbtel
 telemac
 tomawac
+UBOR
+VBOR
 waqtel
