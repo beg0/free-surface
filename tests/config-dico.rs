@@ -1,4 +1,4 @@
-/// # Integration tests for free_surface::config::dicofile
+//  # Integration tests for free_surface::config::dicofile
 mod test_helpers;
 
 use free_surface::config::configvalue::{ConfigValue, DicoType};
