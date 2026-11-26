@@ -1,4 +1,4 @@
-/// # Integration tests for free_surface::config::dicofile
+//  # Integration tests for free_surface::config::dicofile
 mod test_helpers;
 
 use free_surface::config::configvalue::{ConfigValue, DicoType};
@@ -8,7 +8,7 @@ use test_helpers::{fixture, read_lines, telemac_file};
 
 #[test]
 #[ignore = "downloads telemac source, run with --include-ignored"]
-fn all_telemac_dic() {
+fn all_telemac_dico() {
     let dico_files = [
         "sources/khione/khione.dico",
         "sources/telemac2d/telemac2d.dico",

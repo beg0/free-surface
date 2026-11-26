@@ -4,6 +4,7 @@
 //!
 
 pub mod casfile;
+pub mod cli;
 pub mod configvalue;
 pub mod dicofile;
 pub mod parse_helpers;

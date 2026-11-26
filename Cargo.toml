@@ -35,6 +35,7 @@ fluent-message = {
     rev = "a45621208c28e308980de7bce99a0bdfc3cc4886",
     features=["i18n"]
 }
+strum = { version = "0.28.0", features = ["derive"] }
 
 [dev-dependencies]
 assert_cmd = "2"
